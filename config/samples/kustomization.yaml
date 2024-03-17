@@ -1,0 +1,4 @@
+## Append samples of your project ##
+resources:
+  - github_v1_token.yaml
+#+kubebuilder:scaffold:manifestskustomizesamples
