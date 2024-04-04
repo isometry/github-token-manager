@@ -23,7 +23,6 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -45,9 +44,9 @@ const SecretTokenUsername = "x-access-token"
 
 // Definitions to manage status conditions
 const (
-	// conditionTypeReady represents the status of the Secret reconciliation
-	conditionTypeReady    = "Ready"
-	conditionTypeDegraded = "Degraded"
+	// conditionTypeAvailable represents the status of the Secret reconciliation
+	conditionTypeAvailable = "Available"
+	conditionTypeDegraded  = "Degraded"
 )
 
 var (
@@ -102,16 +101,17 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 		return ctrl.Result{}, err
 	}
 
-	installationTokenOptions := &github.InstallationTokenOptions{
-		Permissions:   token.Spec.Permissions.ToInstallationPermissions(),
-		Repositories:  token.Spec.Repositories,
-		RepositoryIDs: token.Spec.RepositoryIDs,
-	}
-
 	// Initialize Token status conditions
 	if token.Status.Conditions == nil || len(token.Status.Conditions) == 0 {
 		log.Info("initializing token status conditions")
-		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{Type: conditionTypeReady, Status: metav1.ConditionUnknown, Reason: "Reconciling", Message: "Starting reconciliation"})
+
+		token.Status.SetCondition(metav1.Condition{
+			Type:    conditionTypeAvailable,
+			Status:  metav1.ConditionUnknown,
+			Reason:  "Reconciling",
+			Message: "Starting reconciliation",
+		})
+
 		if err = r.Status().Update(ctx, token); err != nil {
 			log.Error(err, "failed to update token status")
 			return ctrl.Result{}, err
@@ -125,25 +125,34 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 	}
 
 	// Fetch managed Secret if it exists, else create a new one
+	secretName := token.GetSecretName()
+	secretNamespace := token.GetSecretNamespace()
+
 	secret := &corev1.Secret{}
-	err = r.Get(ctx, types.NamespacedName{Name: token.Name, Namespace: token.Namespace}, secret)
-	if err != nil && apierrors.IsNotFound(err) {
-		log.Info("secret not found", "Secret.Namespace", token.Namespace, "Secret.Name", token.Name)
+	err = r.Get(ctx, types.NamespacedName{Name: secretName, Namespace: secretNamespace}, secret)
+	switch {
+	case err == nil:
+		// continue
+
+	case apierrors.IsNotFound(err):
+		log.Info("secret not found", "secretNamespace", secretNamespace, "secretName", secretName)
 		// Create a new Secret
-		tokenData, err := app.NewToken(ctx, token.Spec.InstallationID, installationTokenOptions)
+		installationToken, err := app.CreateInstallationToken(ctx, token)
 		if err != nil {
 			log.Error(err, "failed to get token")
 			return ctrl.Result{}, err
 		}
 
-		secret, err = r.newSecretForToken(token, tokenData)
+		secret, err = r.newSecretForToken(token, installationToken)
 		if err != nil {
 			log.Error(err, "failed to define secret for token")
 
-			// The following implementation will update the status
-			meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{Type: conditionTypeReady,
-				Status: metav1.ConditionFalse, Reason: "Reconciling",
-				Message: fmt.Sprintf("failed to create secret for token (%s): (%s)", token.Name, err)})
+			token.Status.SetCondition(metav1.Condition{
+				Type:    conditionTypeAvailable,
+				Status:  metav1.ConditionFalse,
+				Reason:  "Reconciling",
+				Message: fmt.Sprintf("Failed to create secret for token (%s): (%s)", token.Name, err),
+			})
 
 			if err := r.Status().Update(ctx, token); err != nil {
 				log.Error(err, "failed to update token status")
@@ -153,21 +162,19 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 			return ctrl.Result{}, err
 		}
 
-		log.Info("creating token secret",
-			"Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
+		log.Info("creating token secret", "secretNamespace", secretNamespace, "secretName", secretName)
 		if err = r.Create(ctx, secret); err != nil {
-			log.Error(err, "failed to create token secret",
-				"Secret.Namespace", secret.Namespace, "Secret.Name", secret.Name)
+			log.Error(err, "failed to create token secret", "secretNamespace", secretNamespace, "secretName", secretName)
 			return ctrl.Result{}, err
 		}
 
-		meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{Type: conditionTypeReady,
-			Status: metav1.ConditionTrue, Reason: "Reconciled",
-			Message: fmt.Sprintf("Secret for Token (%s) created successfully", token.Name)})
-
-		expiresAt := tokenData.GetExpiresAt().Time
-		token.Status.ExpiresAt = metav1.NewTime(expiresAt)
-		token.Status.UpdatedAt = metav1.NewTime(expiresAt.Add(-1 * time.Hour))
+		token.Status.SetCondition(metav1.Condition{
+			Type:    conditionTypeAvailable,
+			Status:  metav1.ConditionTrue,
+			Reason:  "Created",
+			Message: fmt.Sprintf("Secret for Token (%s) created successfully", token.Name),
+		})
+		token.Status.UpdateExpiresAt(installationToken.GetExpiresAt().Time)
 
 		if err := r.Status().Update(ctx, token); err != nil {
 			log.Error(err, "failed to update token status")
@@ -176,7 +183,8 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 
 		// Secret created successfully
 		return ctrl.Result{}, nil
-	} else if err != nil {
+
+	default:
 		log.Error(err, "failed to get secret")
 		return ctrl.Result{}, err
 	}
@@ -185,37 +193,36 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 
 	updatedAt := token.Status.UpdatedAt.Time
 	refreshInterval := token.Spec.RefreshInterval.Duration
+	updateDeadline := updatedAt.Add(refreshInterval)
 
 	// Check if a refresh is needed
-	if time.Now().Before(updatedAt.Add(refreshInterval)) {
-		requeueAfter := time.Until(updatedAt.Add(refreshInterval))
+	if time.Now().Before(updateDeadline) {
+		requeueAfter := time.Until(updateDeadline)
 		log.Info("skipping early refresh", "requeueAfter", requeueAfter)
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
 
 	// Update existing Secret
-	tokenData, err := app.NewToken(ctx, token.Spec.InstallationID, installationTokenOptions)
+	installationToken, err := app.CreateInstallationToken(ctx, token)
 	if err != nil {
 		log.Error(err, "Failed to get token")
 		return ctrl.Result{}, err
 	}
-	secret.Data["username"] = []byte(SecretTokenUsername) // technically unnecessary if Secret hasn't been tampered with
-	secret.Data["password"] = []byte(tokenData.GetToken())
+
+	secret.Data = secretDataForToken(installationToken)
+
 	if err := r.Update(ctx, secret); err != nil {
 		log.Error(err, "Failed to update Secret")
 		return ctrl.Result{}, err
 	}
 
-	meta.SetStatusCondition(&token.Status.Conditions, metav1.Condition{Type: conditionTypeReady,
-		LastTransitionTime: metav1.Now(),
-		Status:             metav1.ConditionTrue,
-		Reason:             "Reconciled",
-		Message:            fmt.Sprintf("Secret for Token (%s) refreshed successfully", token.Name),
+	token.Status.SetCondition(metav1.Condition{
+		Type:    conditionTypeAvailable,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Updated",
+		Message: fmt.Sprintf("Secret for Token (%s) refreshed successfully", token.Name),
 	})
-
-	expiresAt := tokenData.GetExpiresAt().Time
-	token.Status.ExpiresAt = metav1.NewTime(expiresAt)
-	token.Status.UpdatedAt = metav1.NewTime(expiresAt.Add(-1 * time.Hour))
+	token.Status.UpdateExpiresAt(installationToken.GetExpiresAt().Time)
 
 	if err := r.Status().Update(ctx, token); err != nil {
 		log.Error(err, "Failed to update Token status")
@@ -226,19 +233,23 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 	return ctrl.Result{RequeueAfter: refreshInterval}, nil
 }
 
+func secretDataForToken(installationToken *github.InstallationToken) map[string][]byte {
+	return map[string][]byte{
+		"username": []byte(SecretTokenUsername),
+		"password": []byte(installationToken.GetToken()),
+	}
+}
+
 // newSecretForToken returns a new Secret object containing the credentials for the Token
-func (r *TokenReconciler) newSecretForToken(token *githubv1.Token, git *github.InstallationToken) (*corev1.Secret, error) {
+func (r *TokenReconciler) newSecretForToken(token *githubv1.Token, installationToken *github.InstallationToken) (*corev1.Secret, error) {
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      token.Name,
-			Namespace: token.Namespace,
+			Name:      token.GetSecretName(),
+			Namespace: token.GetSecretNamespace(),
 			Labels:    labelsForToken(token.Name),
 		},
 		Type: SecretTypeGithubToken,
-		Data: map[string][]byte{
-			"username": []byte(SecretTokenUsername),
-			"password": []byte(git.GetToken()), // TODO: Replace with the actual token
-		},
+		Data: secretDataForToken(installationToken),
 	}
 
 	// Set the ownerRef for the Deployment
@@ -252,7 +263,8 @@ func (r *TokenReconciler) newSecretForToken(token *githubv1.Token, git *github.I
 // labelsForToken returns the labels for selecting the resources
 // More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
 func labelsForToken(name string) map[string]string {
-	return map[string]string{"app.kubernetes.io/name": "Token",
+	return map[string]string{
+		"app.kubernetes.io/name":       "Token",
 		"app.kubernetes.io/instance":   name,
 		"app.kubernetes.io/part-of":    "ghtoken-manager",
 		"app.kubernetes.io/created-by": "ghtoken-manager",
@@ -274,17 +286,17 @@ func ignoreStatusUpdatePredicate() predicate.Predicate {
 	}
 }
 
-func ignoreManagedSecretsPredicate() predicate.Predicate {
-	return predicate.Funcs{
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			// Ignore updates to Secrets
-			if _, isSecret := e.ObjectNew.(*corev1.Secret); isSecret {
-				return false
-			}
-			return true
-		},
-	}
-}
+// func ignoreManagedSecretsPredicate() predicate.Predicate {
+// 	return predicate.Funcs{
+// 		UpdateFunc: func(e event.UpdateEvent) bool {
+// 			// Ignore updates to Secrets
+// 			if _, isSecret := e.ObjectNew.(*corev1.Secret); isSecret {
+// 				return false
+// 			}
+// 			return true
+// 		},
+// 	}
+// }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -292,7 +304,7 @@ func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&githubv1.Token{}).
 		// Owns(&corev1.Secret{}).
 		WithEventFilter(ignoreStatusUpdatePredicate()).
-		WithEventFilter(ignoreManagedSecretsPredicate()).
+		// WithEventFilter(ignoreManagedSecretsPredicate()).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}). // default
 		Complete(r)
 }

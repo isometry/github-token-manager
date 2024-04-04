@@ -40,9 +40,13 @@ spec:
             description: TokenSpec defines the desired state of Token
             properties:
               installationID:
+                description: Specify or override the InstallationID of the GitHub
+                  App for this Token
                 format: int64
                 type: integer
               permissions:
+                description: Specify the permissions for the token as a subset of
+                  those of the GitHub App
                 properties:
                   actions:
                     enum:
@@ -227,18 +231,24 @@ spec:
                 type: object
               refreshInterval:
                 default: 10m
-                description: 'TODO: add upper and lower bounds'
+                description: 'Specify how often to refresh the token (maximum: 1h)'
                 format: duration
                 type: string
               repositories:
+                description: Specify the repositories for which the token should have
+                  access
                 items:
                   type: string
                 type: array
               repositoryIDs:
+                description: Specify the repository IDs for which the token should
+                  have access
                 items:
                   format: int64
                   type: integer
                 type: array
+              secretName:
+                type: string
             type: object
           status:
             description: TokenStatus defines the observed state of Token

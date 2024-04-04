@@ -17,7 +17,10 @@ limitations under the License.
 package v1
 
 import (
+	"time"
+
 	"github.com/google/go-github/v60/github"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -253,21 +256,28 @@ type TokenSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// +optional
+	SecretName string `json:"secretName,omitempty"`
+
+	// +optional
+	// Specify or override the InstallationID of the GitHub App for this Token
 	InstallationID int64 `json:"installationID,omitempty"`
 
 	// +optional
 	// +kubebuilder:validation:Format:=duration
 	// +kubebuilder:default:="10m"
-	// TODO: add upper and lower bounds
+	// Specify how often to refresh the token (maximum: 1h)
 	RefreshInterval metav1.Duration `json:"refreshInterval"`
 
 	// +optional
+	// Specify the permissions for the token as a subset of those of the GitHub App
 	Permissions *Permissions `json:"permissions,omitempty"`
 
 	// +optional
+	// Specify the repositories for which the token should have access
 	Repositories []string `json:"repositories,omitempty"`
 
 	// +optional
+	// Specify the repository IDs for which the token should have access
 	RepositoryIDs []int64 `json:"repositoryIDs,omitempty"`
 }
 
@@ -282,6 +292,15 @@ type TokenStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 }
 
+func (s *TokenStatus) UpdateExpiresAt(expiresAt time.Time) {
+	s.ExpiresAt = metav1.NewTime(expiresAt)
+	s.UpdatedAt = metav1.NewTime(expiresAt.Add(-1 * time.Hour))
+}
+
+func (s *TokenStatus) SetCondition(condition metav1.Condition) (changed bool) {
+	return meta.SetStatusCondition(&s.Conditions, condition)
+}
+
 // Token is the Schema for the Tokens API
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
@@ -291,6 +310,27 @@ type Token struct {
 
 	Spec   TokenSpec   `json:"spec,omitempty"`
 	Status TokenStatus `json:"status,omitempty"`
+}
+
+// GetSecretName returns the name of the Secret for the Token
+func (t *Token) GetSecretName() string {
+	secretName := t.Name
+	if t.Spec.SecretName != "" {
+		secretName = t.Spec.SecretName
+	}
+	return secretName
+}
+
+func (t *Token) GetSecretNamespace() string {
+	return t.Namespace
+}
+
+func (t *Token) GetInstallationTokenOptions() *github.InstallationTokenOptions {
+	return &github.InstallationTokenOptions{
+		Permissions:   t.Spec.Permissions.ToInstallationPermissions(),
+		Repositories:  t.Spec.Repositories,
+		RepositoryIDs: t.Spec.RepositoryIDs,
+	}
 }
 
 //+kubebuilder:object:root=true

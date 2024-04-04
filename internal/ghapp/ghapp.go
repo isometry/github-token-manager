@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/bradleyfalzon/ghinstallation"
+	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v60/github"
+
+	githubv1 "github.com/isometry/ghtoken-manager/api/v1"
 )
 
 type GHApp struct {
@@ -55,4 +57,23 @@ func (g *GHApp) NewToken(ctx context.Context, installationId int64, options *git
 	}
 
 	return token, nil
+}
+
+func (g *GHApp) CreateInstallationToken(ctx context.Context, token *githubv1.Token) (*github.InstallationToken, error) {
+	installationId := token.Spec.InstallationID
+	if installationId == 0 {
+		if g.InstallationID == 0 {
+			return nil, fmt.Errorf("no GitHub App Installation ID configured")
+		}
+		installationId = g.InstallationID
+	}
+
+	options := token.GetInstallationTokenOptions()
+
+	installationToken, _, err := g.Client.Apps.CreateInstallationToken(ctx, installationId, options)
+	if err != nil {
+		return nil, err
+	}
+
+	return installationToken, nil
 }
