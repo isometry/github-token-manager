@@ -27,12 +27,15 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// TokenSpec defines the desired state of Token
-type TokenSpec struct {
+// ClusterTokenSpec defines the desired state of ClusterToken
+type ClusterTokenSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// +optional
 	SecretName string `json:"secretName,omitempty"`
+
+	// +kubebuilder:validation:Required
+	SecretNamespace string `json:"secretNamespace,omitempty"`
 
 	// +optional
 	// Specify or override the InstallationID of the GitHub App for this Token
@@ -57,37 +60,41 @@ type TokenSpec struct {
 	RepositoryIDs []int64 `json:"repositoryIDs,omitempty"`
 }
 
-// TokenStatus defines the observed state of Token
-type TokenStatus struct {
+// ClusterTokenStatus defines the observed state of ClusterToken
+type ClusterTokenStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
-	ManagedSecretName string `json:"managedSecretName,omitempty"`
+
+	ManagedSecretName      string `json:"managedSecretName,omitempty"`
+	ManagedSecretNamespace string `json:"managedSecretNamespace,omitempty"`
 
 	IAT InstallationAccessToken `json:"installationAccessToken,omitempty"`
 
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 }
 
-// Token is the Schema for the Tokens API
-// +kubebuilder:object:root=true
-// +kubebuilder:subresource:status
-type Token struct {
+//+kubebuilder:object:root=true
+//+kubebuilder:subresource:status
+//+kubebuilder:resource:scope=Cluster
+
+// ClusterToken is the Schema for the clustertokens API
+type ClusterToken struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   TokenSpec   `json:"spec,omitempty"`
-	Status TokenStatus `json:"status,omitempty"`
+	Spec   ClusterTokenSpec   `json:"spec,omitempty"`
+	Status ClusterTokenStatus `json:"status,omitempty"`
 }
 
-func (t *Token) GetName() string {
+func (t *ClusterToken) GetName() string {
 	return t.Name
 }
 
-func (t *Token) GetInstallationID() int64 {
+func (t *ClusterToken) GetInstallationID() int64 {
 	return t.Spec.InstallationID
 }
 
 // GetSecretName returns the name of the Secret for the Token
-func (t *Token) GetSecretName() string {
+func (t *ClusterToken) GetSecretName() string {
 	secretName := t.Name
 	if t.Spec.SecretName != "" {
 		secretName = t.Spec.SecretName
@@ -95,11 +102,15 @@ func (t *Token) GetSecretName() string {
 	return secretName
 }
 
-func (t *Token) GetSecretNamespace() string {
-	return t.Namespace
+func (t *ClusterToken) GetSecretNamespace() string {
+	secretNamespace := t.Namespace
+	if t.Spec.SecretNamespace != "" {
+		secretNamespace = t.Spec.SecretNamespace
+	}
+	return secretNamespace
 }
 
-func (t *Token) GetInstallationTokenOptions() *github.InstallationTokenOptions {
+func (t *ClusterToken) GetInstallationTokenOptions() *github.InstallationTokenOptions {
 	return &github.InstallationTokenOptions{
 		Permissions:   t.Spec.Permissions.ToInstallationPermissions(),
 		Repositories:  t.Spec.Repositories,
@@ -107,36 +118,38 @@ func (t *Token) GetInstallationTokenOptions() *github.InstallationTokenOptions {
 	}
 }
 
-func (t *Token) SetManagedSecret() {
+func (t *ClusterToken) SetManagedSecret() {
 	t.Status.ManagedSecretName = t.GetSecretName()
+	t.Status.ManagedSecretNamespace = t.GetSecretNamespace()
 }
 
-func (t *Token) ManagedSecretHasChanged() bool {
-	if t.Status.ManagedSecretName == "" {
+func (t *ClusterToken) ManagedSecretHasChanged() bool {
+	if t.Status.ManagedSecretName == "" && t.Status.ManagedSecretNamespace == "" {
 		return false
 	}
-	return t.Status.ManagedSecretName != t.GetSecretName()
+	return t.Status.ManagedSecretName != t.GetSecretName() ||
+		t.Status.ManagedSecretNamespace != t.GetSecretNamespace()
 }
 
-func (t *Token) SetStatusExpiresAt(expiresAt time.Time) {
+func (t *ClusterToken) SetStatusExpiresAt(expiresAt time.Time) {
 	t.Status.IAT.ExpiresAt = metav1.NewTime(expiresAt)
 	t.Status.IAT.CreatedAt = metav1.NewTime(t.Status.IAT.ExpiresAt.Add(-1 * time.Hour))
 	t.Status.IAT.RefreshAt = metav1.NewTime(t.Status.IAT.CreatedAt.Add(t.Spec.RefreshInterval.Duration))
 }
 
-func (t *Token) SetStatusCondition(condition metav1.Condition) (changed bool) {
+func (t *ClusterToken) SetStatusCondition(condition metav1.Condition) (changed bool) {
 	return meta.SetStatusCondition(&t.Status.Conditions, condition)
 }
 
 //+kubebuilder:object:root=true
 
-// TokenList contains a list of Token
-type TokenList struct {
+// ClusterTokenList contains a list of ClusterToken
+type ClusterTokenList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Token `json:"items"`
+	Items           []ClusterToken `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&Token{}, &TokenList{})
+	SchemeBuilder.Register(&ClusterToken{}, &ClusterTokenList{})
 }

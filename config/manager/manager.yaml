@@ -59,7 +59,7 @@ spec:
       containers:
         - command:
             # - /manager
-            - /ko-app/manager
+            - /ko-app/cmd
           args:
             - --leader-elect
           image: controller:latest

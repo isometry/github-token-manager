@@ -4,20 +4,20 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.14.0
-  name: tokens.github.as-code.io
+  name: clustertokens.github.as-code.io
 spec:
   group: github.as-code.io
   names:
-    kind: Token
-    listKind: TokenList
-    plural: tokens
-    singular: token
-  scope: Namespaced
+    kind: ClusterToken
+    listKind: ClusterTokenList
+    plural: clustertokens
+    singular: clustertoken
+  scope: Cluster
   versions:
   - name: v1
     schema:
       openAPIV3Schema:
-        description: Token is the Schema for the Tokens API
+        description: ClusterToken is the Schema for the clustertokens API
         properties:
           apiVersion:
             description: |-
@@ -37,7 +37,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: TokenSpec defines the desired state of Token
+            description: ClusterTokenSpec defines the desired state of ClusterToken
             properties:
               installationID:
                 description: Specify or override the InstallationID of the GitHub
@@ -249,9 +249,11 @@ spec:
                 type: array
               secretName:
                 type: string
+              secretNamespace:
+                type: string
             type: object
           status:
-            description: TokenStatus defines the observed state of Token
+            description: ClusterTokenStatus defines the observed state of ClusterToken
             properties:
               conditions:
                 items:
@@ -335,8 +337,8 @@ spec:
                     type: string
                 type: object
               managedSecretName:
-                description: 'Important: Run "make" to regenerate code after modifying
-                  this file'
+                type: string
+              managedSecretNamespace:
                 type: string
             type: object
         type: object

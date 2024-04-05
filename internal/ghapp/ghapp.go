@@ -8,7 +8,7 @@ import (
 	"github.com/bradleyfalzon/ghinstallation/v2"
 	"github.com/google/go-github/v60/github"
 
-	githubv1 "github.com/isometry/ghtoken-manager/api/v1"
+	tm "github.com/isometry/ghtoken-manager/internal/token_manager"
 )
 
 type GHApp struct {
@@ -43,24 +43,8 @@ func NewGHAppFromConfig() (*GHApp, error) {
 	return NewGHApp(cfg.AppID, cfg.PrivateKey, cfg.InstallationID)
 }
 
-func (g *GHApp) NewToken(ctx context.Context, installationId int64, options *github.InstallationTokenOptions) (*github.InstallationToken, error) {
-	if installationId == 0 {
-		if g.InstallationID == 0 {
-			return nil, fmt.Errorf("installation ID not provided")
-		}
-		installationId = g.InstallationID
-	}
-
-	token, _, err := g.Client.Apps.CreateInstallationToken(ctx, installationId, options)
-	if err != nil {
-		return nil, err
-	}
-
-	return token, nil
-}
-
-func (g *GHApp) CreateInstallationToken(ctx context.Context, token *githubv1.Token) (*github.InstallationToken, error) {
-	installationId := token.Spec.InstallationID
+func (g *GHApp) CreateInstallationToken(ctx context.Context, token tm.TokenManager) (*github.InstallationToken, error) {
+	installationId := token.GetInstallationID()
 	if installationId == 0 {
 		if g.InstallationID == 0 {
 			return nil, fmt.Errorf("no GitHub App Installation ID configured")

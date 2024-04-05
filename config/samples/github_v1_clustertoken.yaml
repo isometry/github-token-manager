@@ -1,14 +1,15 @@
 apiVersion: github.as-code.io/v1
-kind: Token
+kind: ClusterToken
 metadata:
   labels:
-    app.kubernetes.io/name: token
-    app.kubernetes.io/instance: token-sample
+    app.kubernetes.io/name: clustertoken
+    app.kubernetes.io/instance: clustertoken-sample
     app.kubernetes.io/part-of: ghtoken-manager
     app.kubernetes.io/managed-by: kustomize
     app.kubernetes.io/created-by: ghtoken-manager
-  name: token-sample
+  name: clustertoken-sample
 spec:
+  secretNamespace: default
   permissions:
     metadata: read
   refreshInterval: 10m

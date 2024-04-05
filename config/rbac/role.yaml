@@ -26,6 +26,32 @@ rules:
 - apiGroups:
   - github.as-code.io
   resources:
+  - clustertokens
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - github.as-code.io
+  resources:
+  - clustertokens/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - github.as-code.io
+  resources:
+  - clustertokens/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - github.as-code.io
+  resources:
   - tokens
   verbs:
   - create

@@ -1,0 +1,27 @@
+# permissions for end users to view clustertokens.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/instance: clustertoken-viewer-role
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: ghtoken-manager
+    app.kubernetes.io/part-of: ghtoken-manager
+    app.kubernetes.io/managed-by: kustomize
+  name: clustertoken-viewer-role
+rules:
+- apiGroups:
+  - github.as-code.io
+  resources:
+  - clustertokens
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - github.as-code.io
+  resources:
+  - clustertokens/status
+  verbs:
+  - get

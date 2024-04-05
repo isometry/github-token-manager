@@ -6,7 +6,7 @@ defaultPlatforms:
 
 builds:
   - id: manager
-    main: ./cmd/manager
+    main: ./cmd
     env:
       - CGO_ENABLED=0
     flags:

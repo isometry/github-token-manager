@@ -123,11 +123,19 @@ func main() {
 	}
 
 	if err = (&controller.TokenReconciler{
-		Client:   mgr.GetClient(),
-		Scheme:   mgr.GetScheme(),
-		Recorder: mgr.GetEventRecorderFor("token-controller"),
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		// Recorder: mgr.GetEventRecorderFor("token-controller"),
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Token")
+		os.Exit(1)
+	}
+	if err = (&controller.ClusterTokenReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		// Recorder: mgr.GetEventRecorderFor("clustertoken-controller"),
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ClusterToken")
 		os.Exit(1)
 	}
 	//+kubebuilder:scaffold:builder
