@@ -1,4 +1,5 @@
 OPERATOR_NAME ?= github-token-manager
+IMAGE_SOURCE ?= https://github.com/isometry/github-token-manager
 
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
@@ -189,7 +190,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: ko-build
 ko-build: ## Build the manager image using ko.
 	KO_DOCKER_REPO=$(IMAGE_TAG_BASE) \
-	ko build --bare --platform=$(PLATFORMS) --push ./cmd
+	ko build --bare --platform=$(PLATFORMS) --image-label org.opencontainers.image.source=$(IMAGE_SOURCE) --push ./cmd
 	
 
 ##@ Deployment
