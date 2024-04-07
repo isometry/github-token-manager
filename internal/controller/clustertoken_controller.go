@@ -145,7 +145,7 @@ func (r *ClusterTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				return ctrl.Result{}, err
 			}
 
-			return ctrl.Result{RequeueAfter: time.Minute}, err
+			return ctrl.Result{}, err
 		}
 
 	case apierrors.IsNotFound(err):
@@ -154,7 +154,7 @@ func (r *ClusterTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		installationToken, err := app.CreateInstallationToken(ctx, token)
 		if err != nil {
 			log.Error(err, "failed to get token")
-			return ctrl.Result{RequeueAfter: 5 * time.Minute}, err
+			return ctrl.Result{}, err
 		}
 
 		secret, err = newSecretForToken(token, r.Scheme, installationToken)
@@ -219,7 +219,7 @@ func (r *ClusterTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	installationToken, err := app.CreateInstallationToken(ctx, token)
 	if err != nil {
 		log.Error(err, "Failed to get token")
-		return ctrl.Result{RequeueAfter: 5 * time.Minute}, err
+		return ctrl.Result{}, err
 	}
 
 	secret.Data = token.SecretData(installationToken)
