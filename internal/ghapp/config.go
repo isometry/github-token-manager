@@ -20,7 +20,7 @@ var (
 
 type Config struct {
 	AppID          int64  `mapstructure:"appId"`
-	PrivateKey     []byte `mapstructure:"privateKey"`
+	PrivateKey     string `mapstructure:"privateKey"`
 	InstallationID int64  `mapstructure:"installationId"`
 }
 
@@ -94,11 +94,12 @@ func LoadConfig() (*Config, error) {
 }
 
 func (c *Config) CheckPrivateKey() error {
-	if c.PrivateKey == nil {
+	privateKey := []byte(c.PrivateKey)
+	if privateKey == nil {
 		return errors.New("unset")
 	}
 
-	block, _ := pem.Decode(c.PrivateKey)
+	block, _ := pem.Decode(privateKey)
 	if block == nil || block.Type != "RSA PRIVATE KEY" {
 		return errors.New("failed to decode PEM")
 	}

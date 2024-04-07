@@ -40,7 +40,7 @@ func NewGHAppFromConfig() (*GHApp, error) {
 		return nil, err
 	}
 
-	return NewGHApp(cfg.AppID, cfg.PrivateKey, cfg.InstallationID)
+	return NewGHApp(cfg.AppID, []byte(cfg.PrivateKey), cfg.InstallationID)
 }
 
 func (g *GHApp) CreateInstallationToken(ctx context.Context, token tm.TokenManager) (*github.InstallationToken, error) {
