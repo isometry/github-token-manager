@@ -10,6 +10,7 @@ import (
 // TokenManager provides a common interface for both namespaced Tokens and ClusterTokens
 type TokenManager interface {
 	metav1.Object
+	GetType() string
 	GetName() string
 	// GetSpec() *TokenSpec
 	GetInstallationID() int64

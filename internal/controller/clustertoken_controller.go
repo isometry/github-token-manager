@@ -28,7 +28,10 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
 	"github.com/isometry/github-token-manager/internal/ghapp"
@@ -248,9 +251,26 @@ func (r *ClusterTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{RequeueAfter: refreshInterval}, nil
 }
 
+func ignoreClusterTokenStatusUpdatePredicate() predicate.Predicate {
+	return predicate.Funcs{
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			oldToken, ok1 := e.ObjectOld.(*githubv1.ClusterToken)
+			newToken, ok2 := e.ObjectNew.(*githubv1.ClusterToken)
+			if ok1 && ok2 && oldToken.GetGeneration() == newToken.GetGeneration() {
+				// The generation has not changed, so ignore this update
+				return false
+			}
+			// The generation has changed, so handle this update
+			return true
+		},
+	}
+}
+
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterTokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&githubv1.ClusterToken{}).
+		WithEventFilter(ignoreClusterTokenStatusUpdatePredicate()).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 1}). // default
 		Complete(r)
 }

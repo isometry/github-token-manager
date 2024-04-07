@@ -90,6 +90,10 @@ type Token struct {
 	Status TokenStatus `json:"status,omitempty"`
 }
 
+func (t *Token) GetType() string {
+	return "Token"
+}
+
 func (t *Token) GetName() string {
 	return t.Name
 }

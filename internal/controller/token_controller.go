@@ -248,18 +248,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 	return ctrl.Result{RequeueAfter: refreshInterval}, nil
 }
 
-// labelsForToken returns the labels for selecting the resources
-// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
-func labelsForToken(name string) map[string]string {
-	return map[string]string{
-		"app.kubernetes.io/name":       "Token",
-		"app.kubernetes.io/instance":   name,
-		"app.kubernetes.io/part-of":    "github-token-manager",
-		"app.kubernetes.io/created-by": "github-token-manager",
-	}
-}
-
-func ignoreStatusUpdatePredicate() predicate.Predicate {
+func ignoreTokenStatusUpdatePredicate() predicate.Predicate {
 	return predicate.Funcs{
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			oldToken, ok1 := e.ObjectOld.(*githubv1.Token)
@@ -291,7 +280,7 @@ func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&githubv1.Token{}).
 		// Owns(&corev1.Secret{}).
-		WithEventFilter(ignoreStatusUpdatePredicate()).
+		WithEventFilter(ignoreTokenStatusUpdatePredicate()).
 		// WithEventFilter(ignoreManagedSecretsPredicate()).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}). // default
 		Complete(r)

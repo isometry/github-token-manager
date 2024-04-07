@@ -98,6 +98,10 @@ type ClusterToken struct {
 	Status ClusterTokenStatus `json:"status,omitempty"`
 }
 
+func (t *ClusterToken) GetType() string {
+	return "ClusterToken"
+}
+
 func (t *ClusterToken) GetName() string {
 	return t.Name
 }

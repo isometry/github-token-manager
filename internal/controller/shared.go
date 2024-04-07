@@ -29,7 +29,7 @@ func newSecretForToken(token tm.TokenManager, scheme *runtime.Scheme, installati
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      token.GetSecretName(),
 			Namespace: token.GetSecretNamespace(),
-			Labels:    labelsForToken(token.GetName()),
+			Labels:    secretLabels(token),
 		},
 		Type: SecretTypeGithubToken,
 		Data: token.SecretData(installationToken),
@@ -41,4 +41,15 @@ func newSecretForToken(token tm.TokenManager, scheme *runtime.Scheme, installati
 		return nil, err
 	}
 	return secret, nil
+}
+
+// secretLabels returns the labels for selecting the resources
+// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/common-labels/
+func secretLabels(token tm.TokenManager) map[string]string {
+	return map[string]string{
+		"app.kubernetes.io/name":       token.GetType(),
+		"app.kubernetes.io/instance":   token.GetName(),
+		"app.kubernetes.io/part-of":    "github-token-manager",
+		"app.kubernetes.io/created-by": "github-token-manager",
+	}
 }
