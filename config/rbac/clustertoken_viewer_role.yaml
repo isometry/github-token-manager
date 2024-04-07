@@ -6,22 +6,22 @@ metadata:
     app.kubernetes.io/name: clusterrole
     app.kubernetes.io/instance: clustertoken-viewer-role
     app.kubernetes.io/component: rbac
-    app.kubernetes.io/created-by: ghtoken-manager
-    app.kubernetes.io/part-of: ghtoken-manager
+    app.kubernetes.io/created-by: github-token-manager
+    app.kubernetes.io/part-of: github-token-manager
     app.kubernetes.io/managed-by: kustomize
   name: clustertoken-viewer-role
 rules:
-- apiGroups:
-  - github.as-code.io
-  resources:
-  - clustertokens
-  verbs:
-  - get
-  - list
-  - watch
-- apiGroups:
-  - github.as-code.io
-  resources:
-  - clustertokens/status
-  verbs:
-  - get
+  - apiGroups:
+      - github.as-code.io
+    resources:
+      - clustertokens
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - github.as-code.io
+    resources:
+      - clustertokens/status
+    verbs:
+      - get

@@ -4,9 +4,9 @@ metadata:
   labels:
     app.kubernetes.io/name: token
     app.kubernetes.io/instance: token-sample
-    app.kubernetes.io/part-of: ghtoken-manager
+    app.kubernetes.io/part-of: github-token-manager
     app.kubernetes.io/managed-by: kustomize
-    app.kubernetes.io/created-by: ghtoken-manager
+    app.kubernetes.io/created-by: github-token-manager
   name: token-sample
 spec:
   permissions:

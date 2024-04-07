@@ -1,27 +1,26 @@
-# ghtoken-manager
+# github-token-manager
 
-A Kubernetes operator to manage ephemeral GitHub Access Tokens from GitHub App credentials.
+Kubernetes operator to manage fine-grained, ephemeral Access Tokens generated from GitHub App credentials.
 
 ## Description
 
-A number of Kubernetes operators, including [FluxCD](https://fluxcd.io/) and [upbound/provider-terraform](https://github.com/upbound/provider-terraform), rely on Personal Access Tokens to interact with GitHub. These tend to be either long-lived, poorly scoped, and/or painful to manage.
-This operator works in a similar fashion to cert-manager, turning custom-scoped `Token` requests into `Secrets` with regularly refreshed GitHub App Installation Token credentials ready to use for GitHub clients reliant on HTTP Basic Auth.
+A number of Kubernetes operators, including [FluxCD](https://fluxcd.io/) and [upbound/provider-terraform](https://github.com/upbound/provider-terraform), often need to authenticate with the GitHub API, particularly when private repositories are used. This may be to clone a private repository, pull from a private GHCR repository, or to send a commit or deployment status. Common practice is to use Personal Access Tokens (PATs), but their use is far from optimal: PATs tending to be long-lived, poorly scoped, and tied to an individual, as GitHub has no official support for service accounts.
+
+This operator functions similarly to cert-manager, but instead of managing certificates, it manages GitHub App Installation Access Tokens. It takes custom-scoped `Token` (namespaced) and `ClusterToken` requests and transforms them into `Secrets`. These `Secrets` contain regularly refreshed GitHub App Installation Access Token credentials. These credentials are ready for use with GitHub clients that rely on HTTP Basic Auth, providing a more secure and automated solution for token management.
 
 ## Getting Started
 
 ### Prerequisites
 
-- go version v1.21+
-- [ko](https://ko.build/) version v0.15+
-- kubectl version v1.19+.
-- Access to a Kubernetes v1.19+ cluster.
+* A Kubernetes cluster (v1.21+)
+* A [GitHub App](https://docs.github.com/en/apps/creating-github-apps) with permissions and repository assignments sufficient to meet the needs of all anticipated GitHub API interactions. Typically: `metadata: read`, `contents: read`, `statuses: write`.
 
 ### To Deploy on the cluster
 
 **Build and push your image to the location specified by `IMG`:**
 
 ```sh
-make ko-build IMG=<some-registry>/ghtoken-manager:tag
+make ko-build IMG=<some-registry>/github-token-manager:tag
 ```
 
 **NOTE:** This image ought to be published in the personal registry you specified. 
@@ -37,7 +36,7 @@ make install
 **Deploy the Manager to the cluster with the image specified by `IMG`:**
 
 ```sh
-make deploy IMG=<some-registry>/ghtoken-manager:tag
+make deploy IMG=<some-registry>/github-token-manager:tag
 ```
 
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin 

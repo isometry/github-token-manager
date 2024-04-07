@@ -1,14 +1,14 @@
 package controller
 
 import (
-	"github.com/google/go-github/v60/github"
+	"github.com/google/go-github/v61/github"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"github.com/isometry/ghtoken-manager/internal/ghapp"
-	tm "github.com/isometry/ghtoken-manager/internal/token_manager"
+	"github.com/isometry/github-token-manager/internal/ghapp"
+	tm "github.com/isometry/github-token-manager/internal/token_manager"
 )
 
 // Definitions to manage status conditions
@@ -22,7 +22,6 @@ var (
 )
 
 const SecretTypeGithubToken = "github.as-code.io/token"
-const SecretTokenUsername = "x-access-token"
 
 // newSecretForToken returns a new Secret object containing the credentials for the Token
 func newSecretForToken(token tm.TokenManager, scheme *runtime.Scheme, installationToken *github.InstallationToken) (*corev1.Secret, error) {
@@ -33,7 +32,7 @@ func newSecretForToken(token tm.TokenManager, scheme *runtime.Scheme, installati
 			Labels:    labelsForToken(token.GetName()),
 		},
 		Type: SecretTypeGithubToken,
-		Data: secretDataForToken(installationToken),
+		Data: token.SecretData(installationToken),
 	}
 
 	// Set the ownerRef for the Deployment
@@ -42,11 +41,4 @@ func newSecretForToken(token tm.TokenManager, scheme *runtime.Scheme, installati
 		return nil, err
 	}
 	return secret, nil
-}
-
-func secretDataForToken(installationToken *github.InstallationToken) map[string][]byte {
-	return map[string][]byte{
-		"username": []byte(SecretTokenUsername),
-		"password": []byte(installationToken.GetToken()),
-	}
 }

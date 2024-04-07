@@ -1,4 +1,4 @@
-OPERATOR_NAME ?= ghtoken-manager
+OPERATOR_NAME ?= github-token-manager
 
 # VERSION defines the project version for the bundle.
 # Update this value when you upgrade the version of your project.
@@ -30,7 +30,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 # This variable is used to construct full image tags for bundle and catalog images.
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
-# as-code.io/ghtoken-manager/bundle:$VERSION and as-code.io/ghtoken-manager/catalog:$VERSION.
+# as-code.io/github-token-manager/bundle:$VERSION and as-code.io/github-token-manager/catalog:$VERSION.
 IMAGE_TAG_BASE ?= ghcr.io/isometry/$(OPERATOR_NAME)
 
 # BUNDLE_IMG defines the image:tag used for the bundle.

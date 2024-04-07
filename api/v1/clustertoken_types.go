@@ -19,7 +19,8 @@ package v1
 import (
 	"time"
 
-	"github.com/google/go-github/v60/github"
+	"github.com/google/go-github/v61/github"
+	"github.com/isometry/github-token-manager/internal/ghapp"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -32,30 +33,42 @@ type ClusterTokenSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// +optional
+	// Create a secret with 'username' and 'password' fields rather than 'token'
+	BasicAuth bool `json:"basicAuth,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:MaxLength:=253
+	// Name of the Secret to create for this token (defaults to the name of the ClusterToken)
 	SecretName string `json:"secretName,omitempty"`
 
 	// +kubebuilder:validation:Required
-	SecretNamespace string `json:"secretNamespace,omitempty"`
+	// +kubebuilder:validation:MaxLength:=253
+	SecretNamespace string `json:"secretNamespace"`
 
 	// +optional
+	// +kubebuilder:example:="123456789"
 	// Specify or override the InstallationID of the GitHub App for this Token
 	InstallationID int64 `json:"installationID,omitempty"`
 
 	// +optional
 	// +kubebuilder:validation:Format:=duration
 	// +kubebuilder:default:="10m"
+	// +kubebuilder:example:="45m"
 	// Specify how often to refresh the token (maximum: 1h)
 	RefreshInterval metav1.Duration `json:"refreshInterval"`
 
 	// +optional
+	// +kubebuilder:example:={"metadata": "read", "contents": "read"}
 	// Specify the permissions for the token as a subset of those of the GitHub App
 	Permissions *Permissions `json:"permissions,omitempty"`
 
 	// +optional
+	// +kubebuilder:validation:MaxItems:=500
 	// Specify the repositories for which the token should have access
 	Repositories []string `json:"repositories,omitempty"`
 
 	// +optional
+	// +kubebuilder:validation:MaxItems:=500
 	// Specify the repository IDs for which the token should have access
 	RepositoryIDs []int64 `json:"repositoryIDs,omitempty"`
 }
@@ -93,6 +106,19 @@ func (t *ClusterToken) GetInstallationID() int64 {
 	return t.Spec.InstallationID
 }
 
+func (t *ClusterToken) SecretData(installationToken *github.InstallationToken) map[string][]byte {
+	if t.Spec.BasicAuth {
+		return map[string][]byte{
+			"username": []byte(SecretTokenUsername),
+			"password": []byte(installationToken.GetToken()),
+		}
+	} else {
+		return map[string][]byte{
+			"token": []byte(installationToken.GetToken()),
+		}
+	}
+}
+
 // GetSecretName returns the name of the Secret for the Token
 func (t *ClusterToken) GetSecretName() string {
 	secretName := t.Name
@@ -123,7 +149,7 @@ func (t *ClusterToken) SetManagedSecret() {
 	t.Status.ManagedSecretNamespace = t.GetSecretNamespace()
 }
 
-func (t *ClusterToken) ManagedSecretHasChanged() bool {
+func (t *ClusterToken) ManagedSecretChanged() bool {
 	if t.Status.ManagedSecretName == "" && t.Status.ManagedSecretNamespace == "" {
 		return false
 	}
@@ -131,9 +157,13 @@ func (t *ClusterToken) ManagedSecretHasChanged() bool {
 		t.Status.ManagedSecretNamespace != t.GetSecretNamespace()
 }
 
-func (t *ClusterToken) SetStatusExpiresAt(expiresAt time.Time) {
+func (t *ClusterToken) GetStatusTimestamps() (createdAt, refreshAt, expiresAt time.Time) {
+	return t.Status.IAT.CreatedAt.Time, t.Status.IAT.RefreshAt.Time, t.Status.IAT.ExpiresAt.Time
+}
+
+func (t *ClusterToken) SetStatusTimestamps(expiresAt time.Time) {
 	t.Status.IAT.ExpiresAt = metav1.NewTime(expiresAt)
-	t.Status.IAT.CreatedAt = metav1.NewTime(t.Status.IAT.ExpiresAt.Add(-1 * time.Hour))
+	t.Status.IAT.CreatedAt = metav1.NewTime(t.Status.IAT.ExpiresAt.Add(-ghapp.TokenValidity))
 	t.Status.IAT.RefreshAt = metav1.NewTime(t.Status.IAT.CreatedAt.Add(t.Spec.RefreshInterval.Duration))
 }
 

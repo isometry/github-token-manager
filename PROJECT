@@ -8,8 +8,8 @@ layout:
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
-projectName: ghtoken-manager
-repo: github.com/isometry/ghtoken-manager
+projectName: github-token-manager
+repo: github.com/isometry/github-token-manager
 resources:
 - api:
     crdVersion: v1
@@ -18,7 +18,7 @@ resources:
   domain: as-code.io
   group: github
   kind: Token
-  path: github.com/isometry/ghtoken-manager/api/v1
+  path: github.com/isometry/github-token-manager/api/v1
   version: v1
 - api:
     crdVersion: v1
@@ -26,6 +26,6 @@ resources:
   domain: as-code.io
   group: github
   kind: ClusterToken
-  path: github.com/isometry/ghtoken-manager/api/v1
+  path: github.com/isometry/github-token-manager/api/v1
   version: v1
 version: "3"

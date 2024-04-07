@@ -32,7 +32,7 @@ import (
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	githubv1 "github.com/isometry/ghtoken-manager/api/v1"
+	githubv1 "github.com/isometry/github-token-manager/api/v1"
 	//+kubebuilder:scaffold:imports
 )
 

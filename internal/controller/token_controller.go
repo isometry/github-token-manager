@@ -33,8 +33,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	githubv1 "github.com/isometry/ghtoken-manager/api/v1"
-	"github.com/isometry/ghtoken-manager/internal/ghapp"
+	githubv1 "github.com/isometry/github-token-manager/api/v1"
+	"github.com/isometry/github-token-manager/internal/ghapp"
 )
 
 // TokenReconciler reconciles a Token object
@@ -189,7 +189,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 			Message: fmt.Sprintf("Secret for Token (%s) created successfully", token.Name),
 		})
 		token.SetManagedSecret()
-		token.SetStatusExpiresAt(installationToken.GetExpiresAt().Time)
+		token.SetStatusTimestamps(installationToken.GetExpiresAt().Time)
 
 		if err := r.Status().Update(ctx, token); err != nil {
 			log.Error(err, "failed to update token status")
@@ -206,13 +206,11 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 
 	// TODO: check that existing Secret hasn't been tampered with
 
-	createdAt := token.Status.IAT.CreatedAt.Time
-	refreshInterval := token.Spec.RefreshInterval.Duration
-	updateDeadline := createdAt.Add(refreshInterval)
+	_, refreshAt, _ := token.GetStatusTimestamps()
 
 	// Check if a refresh is needed
-	if time.Now().Before(updateDeadline) {
-		requeueAfter := time.Until(updateDeadline)
+	if time.Now().Before(refreshAt) {
+		requeueAfter := time.Until(refreshAt)
 		log.Info("skipping early refresh", "requeueAfter", requeueAfter)
 		return ctrl.Result{RequeueAfter: requeueAfter}, nil
 	}
@@ -224,7 +222,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 		return ctrl.Result{RequeueAfter: 5 * time.Minute}, err
 	}
 
-	secret.Data = secretDataForToken(installationToken)
+	secret.Data = token.SecretData(installationToken)
 
 	if err := r.Update(ctx, secret); err != nil {
 		log.Error(err, "Failed to update Secret")
@@ -238,13 +236,14 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 		Message: fmt.Sprintf("Secret for Token (%s) refreshed successfully", token.Name),
 	})
 	token.SetManagedSecret()
-	token.SetStatusExpiresAt(installationToken.GetExpiresAt().Time)
+	token.SetStatusTimestamps(installationToken.GetExpiresAt().Time)
 
 	if err := r.Status().Update(ctx, token); err != nil {
 		log.Error(err, "Failed to update Token status")
 		return ctrl.Result{}, err
 	}
 
+	refreshInterval := token.Spec.RefreshInterval.Duration
 	log.Info("refreshed token", "requeueAfter", refreshInterval)
 	return ctrl.Result{RequeueAfter: refreshInterval}, nil
 }
@@ -255,8 +254,8 @@ func labelsForToken(name string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":       "Token",
 		"app.kubernetes.io/instance":   name,
-		"app.kubernetes.io/part-of":    "ghtoken-manager",
-		"app.kubernetes.io/created-by": "ghtoken-manager",
+		"app.kubernetes.io/part-of":    "github-token-manager",
+		"app.kubernetes.io/created-by": "github-token-manager",
 	}
 }
 

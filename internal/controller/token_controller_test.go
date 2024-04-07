@@ -27,7 +27,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	githubv1 "github.com/isometry/ghtoken-manager/api/v1"
+	githubv1 "github.com/isometry/github-token-manager/api/v1"
 )
 
 var _ = Describe("Token Controller", func() {

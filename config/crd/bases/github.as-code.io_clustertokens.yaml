@@ -39,14 +39,22 @@ spec:
           spec:
             description: ClusterTokenSpec defines the desired state of ClusterToken
             properties:
+              basicAuth:
+                description: Create a secret with 'username' and 'password' fields
+                  rather than 'token'
+                type: boolean
               installationID:
                 description: Specify or override the InstallationID of the GitHub
                   App for this Token
+                example: "123456789"
                 format: int64
                 type: integer
               permissions:
                 description: Specify the permissions for the token as a subset of
                   those of the GitHub App
+                example:
+                  contents: read
+                  metadata: read
                 properties:
                   actions:
                     enum:
@@ -232,6 +240,7 @@ spec:
               refreshInterval:
                 default: 10m
                 description: 'Specify how often to refresh the token (maximum: 1h)'
+                example: 45m
                 format: duration
                 type: string
               repositories:
@@ -239,6 +248,7 @@ spec:
                   access
                 items:
                   type: string
+                maxItems: 500
                 type: array
               repositoryIDs:
                 description: Specify the repository IDs for which the token should
@@ -246,11 +256,18 @@ spec:
                 items:
                   format: int64
                   type: integer
+                maxItems: 500
                 type: array
               secretName:
+                description: Name of the Secret to create for this token (defaults
+                  to the name of the ClusterToken)
+                maxLength: 253
                 type: string
               secretNamespace:
+                maxLength: 253
                 type: string
+            required:
+            - secretNamespace
             type: object
           status:
             description: ClusterTokenStatus defines the observed state of ClusterToken
