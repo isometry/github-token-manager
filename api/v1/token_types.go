@@ -33,13 +33,8 @@ type TokenSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// +optional
-	// Create a secret with 'username' and 'password' fields rather than 'token'
-	BasicAuth bool `json:"basicAuth,omitempty"`
-
-	// +optional
-	// kubebuilder:validation:MaxLength:=253
-	// Name of the Secret to create for this token (defaults to the name of the Token)
-	SecretName string `json:"secretName,omitempty"`
+	// Override the default token secret name and type
+	Secret tokenSecretSpec `json:"secret,omitempty"`
 
 	// +optional
 	// +kubebuilder:example:="123456789"
@@ -69,19 +64,31 @@ type TokenSpec struct {
 	RepositoryIDs []int64 `json:"repositoryIDs,omitempty"`
 }
 
+type tokenSecretSpec struct {
+	// +optional
+	// +kubebuilder:validation:MaxLength:=253
+	// Name for the Secret managed by this ClusterToken (defaults to the name of the Token)
+	Name string `json:"name,omitempty"`
+
+	// +optional
+	// Create a secret with 'username' and 'password' fields for HTTP Basic Auth rather than simply 'token'
+	BasicAuth bool `json:"basicAuth,omitempty"`
+}
+
 // TokenStatus defines the observed state of Token
 type TokenStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
-	ManagedSecretName string `json:"managedSecretName,omitempty"`
+	ManagedSecret ManagedSecret `json:"managedSecret,omitempty"`
 
 	IAT InstallationAccessToken `json:"installationAccessToken,omitempty"`
 
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 }
 
-// Token is the Schema for the Tokens API
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+
+// Token is the Schema for the Tokens API
 type Token struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -102,30 +109,25 @@ func (t *Token) GetInstallationID() int64 {
 	return t.Spec.InstallationID
 }
 
-func (t *Token) SecretData(installationToken *github.InstallationToken) map[string][]byte {
-	if t.Spec.BasicAuth {
-		return map[string][]byte{
-			"username": []byte(SecretTokenUsername),
-			"password": []byte(installationToken.GetToken()),
-		}
-	} else {
-		return map[string][]byte{
-			"token": []byte(installationToken.GetToken()),
-		}
-	}
+func (t *Token) GetRefreshInterval() time.Duration {
+	return t.Spec.RefreshInterval.Duration
+}
+
+func (t *Token) GetSecretNamespace() string {
+	return t.Namespace
 }
 
 // GetSecretName returns the name of the Secret for the Token
 func (t *Token) GetSecretName() string {
 	secretName := t.Name
-	if t.Spec.SecretName != "" {
-		secretName = t.Spec.SecretName
+	if t.Spec.Secret.Name != "" {
+		secretName = t.Spec.Secret.Name
 	}
 	return secretName
 }
 
-func (t *Token) GetSecretNamespace() string {
-	return t.Namespace
+func (t *Token) GetSecretBasicAuth() bool {
+	return t.Spec.Secret.BasicAuth
 }
 
 func (t *Token) GetInstallationTokenOptions() *github.InstallationTokenOptions {
@@ -136,25 +138,33 @@ func (t *Token) GetInstallationTokenOptions() *github.InstallationTokenOptions {
 	}
 }
 
-func (t *Token) SetManagedSecret() {
-	t.Status.ManagedSecretName = t.GetSecretName()
+func (t *Token) GetManagedSecret() ManagedSecret {
+	return t.Status.ManagedSecret
 }
 
-func (t *Token) ManagedSecretChanged() bool {
-	if t.Status.ManagedSecretName == "" {
-		return false
+func (t *Token) UpdateManagedSecret() (changed bool) {
+	if !t.Status.ManagedSecret.MatchesSpec(t) {
+		t.Status.ManagedSecret = ManagedSecret{
+			Namespace: t.GetSecretNamespace(),
+			Name:      t.GetSecretName(),
+			BasicAuth: t.GetSecretBasicAuth(),
+		}
+		return true
 	}
-	return t.Status.ManagedSecretName != t.GetSecretName()
+	return false
 }
 
-func (t *Token) GetStatusTimestamps() (createdAt, refreshAt, expiresAt time.Time) {
-	return t.Status.IAT.CreatedAt.Time, t.Status.IAT.RefreshAt.Time, t.Status.IAT.ExpiresAt.Time
+func (t *Token) GetStatusTimestamps() (createdAt, expiresAt time.Time) {
+	return t.Status.IAT.CreatedAt.Time, t.Status.IAT.ExpiresAt.Time
 }
 
 func (t *Token) SetStatusTimestamps(expiresAt time.Time) {
 	t.Status.IAT.ExpiresAt = metav1.NewTime(expiresAt)
 	t.Status.IAT.CreatedAt = metav1.NewTime(t.Status.IAT.ExpiresAt.Add(-ghapp.TokenValidity))
-	t.Status.IAT.RefreshAt = metav1.NewTime(t.Status.IAT.CreatedAt.Add(t.Spec.RefreshInterval.Duration))
+}
+
+func (t *Token) GetStatusConditions() []metav1.Condition {
+	return t.Status.Conditions
 }
 
 func (t *Token) SetStatusCondition(condition metav1.Condition) (changed bool) {

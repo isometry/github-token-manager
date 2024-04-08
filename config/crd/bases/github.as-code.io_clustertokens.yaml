@@ -39,10 +39,6 @@ spec:
           spec:
             description: ClusterTokenSpec defines the desired state of ClusterToken
             properties:
-              basicAuth:
-                description: Create a secret with 'username' and 'password' fields
-                  rather than 'token'
-                type: boolean
               installationID:
                 description: Specify or override the InstallationID of the GitHub
                   App for this Token
@@ -258,16 +254,27 @@ spec:
                   type: integer
                 maxItems: 500
                 type: array
-              secretName:
-                description: Name of the Secret to create for this token (defaults
-                  to the name of the ClusterToken)
-                maxLength: 253
-                type: string
-              secretNamespace:
-                maxLength: 253
-                type: string
+              secret:
+                properties:
+                  basicAuth:
+                    description: Create a secret with 'username' and 'password' fields
+                      for HTTP Basic Auth rather than simply 'token'
+                    type: boolean
+                  name:
+                    description: Name for the Secret managed by this ClusterToken
+                      (defaults to the name of the ClusterToken)
+                    maxLength: 253
+                    type: string
+                  namespace:
+                    description: Namespace for the Secret managed by this ClusterToken
+                    example: default
+                    maxLength: 253
+                    type: string
+                required:
+                - namespace
+                type: object
             required:
-            - secretNamespace
+            - secret
             type: object
           status:
             description: ClusterTokenStatus defines the observed state of ClusterToken
@@ -346,17 +353,23 @@ spec:
                   expiresAt:
                     format: date-time
                     type: string
-                  refreshAt:
-                    format: date-time
-                    type: string
                   updatedAt:
                     format: date-time
                     type: string
                 type: object
-              managedSecretName:
-                type: string
-              managedSecretNamespace:
-                type: string
+              managedSecret:
+                properties:
+                  basicAuth:
+                    type: boolean
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - basicAuth
+                - name
+                - namespace
+                type: object
             type: object
         type: object
     served: true

@@ -70,7 +70,7 @@ var _ = Describe("Token Controller", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &TokenReconciler{
 				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				// Scheme: k8sClient.Scheme(),
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{

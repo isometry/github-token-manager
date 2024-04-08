@@ -8,7 +8,6 @@ import (
 type InstallationAccessToken struct {
 	CreatedAt metav1.Time `json:"updatedAt,omitempty"`
 	ExpiresAt metav1.Time `json:"expiresAt,omitempty"`
-	RefreshAt metav1.Time `json:"refreshAt,omitempty"`
 }
 
 type Permissions struct {

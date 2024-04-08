@@ -39,10 +39,6 @@ spec:
           spec:
             description: TokenSpec defines the desired state of Token
             properties:
-              basicAuth:
-                description: Create a secret with 'username' and 'password' fields
-                  rather than 'token'
-                type: boolean
               installationID:
                 description: Specify or override the InstallationID of the GitHub
                   App for this Token
@@ -258,11 +254,19 @@ spec:
                   type: integer
                 maxItems: 500
                 type: array
-              secretName:
-                description: |-
-                  kubebuilder:validation:MaxLength:=253
-                  Name of the Secret to create for this token (defaults to the name of the Token)
-                type: string
+              secret:
+                description: Override the default token secret name and type
+                properties:
+                  basicAuth:
+                    description: Create a secret with 'username' and 'password' fields
+                      for HTTP Basic Auth rather than simply 'token'
+                    type: boolean
+                  name:
+                    description: Name for the Secret managed by this ClusterToken
+                      (defaults to the name of the Token)
+                    maxLength: 253
+                    type: string
+                type: object
             type: object
           status:
             description: TokenStatus defines the observed state of Token
@@ -341,17 +345,25 @@ spec:
                   expiresAt:
                     format: date-time
                     type: string
-                  refreshAt:
-                    format: date-time
-                    type: string
                   updatedAt:
                     format: date-time
                     type: string
                 type: object
-              managedSecretName:
+              managedSecret:
                 description: 'Important: Run "make" to regenerate code after modifying
                   this file'
-                type: string
+                properties:
+                  basicAuth:
+                    type: boolean
+                  name:
+                    type: string
+                  namespace:
+                    type: string
+                required:
+                - basicAuth
+                - name
+                - namespace
+                type: object
             type: object
         type: object
     served: true

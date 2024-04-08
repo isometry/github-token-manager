@@ -32,18 +32,8 @@ import (
 type ClusterTokenSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// +optional
-	// Create a secret with 'username' and 'password' fields rather than 'token'
-	BasicAuth bool `json:"basicAuth,omitempty"`
-
-	// +optional
-	// +kubebuilder:validation:MaxLength:=253
-	// Name of the Secret to create for this token (defaults to the name of the ClusterToken)
-	SecretName string `json:"secretName,omitempty"`
-
 	// +kubebuilder:validation:Required
-	// +kubebuilder:validation:MaxLength:=253
-	SecretNamespace string `json:"secretNamespace"`
+	Secret clusterTokenSecretSpec `json:"secret"`
 
 	// +optional
 	// +kubebuilder:example:="123456789"
@@ -73,12 +63,28 @@ type ClusterTokenSpec struct {
 	RepositoryIDs []int64 `json:"repositoryIDs,omitempty"`
 }
 
+type clusterTokenSecretSpec struct {
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength:=253
+	// +kubebuilder:example:="default"
+	// Namespace for the Secret managed by this ClusterToken
+	Namespace string `json:"namespace"`
+
+	// +optional
+	// +kubebuilder:validation:MaxLength:=253
+	// Name for the Secret managed by this ClusterToken (defaults to the name of the ClusterToken)
+	Name string `json:"name,omitempty"`
+
+	// +optional
+	// Create a secret with 'username' and 'password' fields for HTTP Basic Auth rather than simply 'token'
+	BasicAuth bool `json:"basicAuth,omitempty"`
+}
+
 // ClusterTokenStatus defines the observed state of ClusterToken
 type ClusterTokenStatus struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
-	ManagedSecretName      string `json:"managedSecretName,omitempty"`
-	ManagedSecretNamespace string `json:"managedSecretNamespace,omitempty"`
+	ManagedSecret ManagedSecret `json:"managedSecret,omitempty"`
 
 	IAT InstallationAccessToken `json:"installationAccessToken,omitempty"`
 
@@ -110,34 +116,25 @@ func (t *ClusterToken) GetInstallationID() int64 {
 	return t.Spec.InstallationID
 }
 
-func (t *ClusterToken) SecretData(installationToken *github.InstallationToken) map[string][]byte {
-	if t.Spec.BasicAuth {
-		return map[string][]byte{
-			"username": []byte(SecretTokenUsername),
-			"password": []byte(installationToken.GetToken()),
-		}
-	} else {
-		return map[string][]byte{
-			"token": []byte(installationToken.GetToken()),
-		}
-	}
+func (t *ClusterToken) GetRefreshInterval() time.Duration {
+	return t.Spec.RefreshInterval.Duration
+}
+
+func (t *ClusterToken) GetSecretNamespace() string {
+	return t.Spec.Secret.Namespace
 }
 
 // GetSecretName returns the name of the Secret for the Token
 func (t *ClusterToken) GetSecretName() string {
 	secretName := t.Name
-	if t.Spec.SecretName != "" {
-		secretName = t.Spec.SecretName
+	if t.Spec.Secret.Name != "" {
+		secretName = t.Spec.Secret.Name
 	}
 	return secretName
 }
 
-func (t *ClusterToken) GetSecretNamespace() string {
-	secretNamespace := t.Namespace
-	if t.Spec.SecretNamespace != "" {
-		secretNamespace = t.Spec.SecretNamespace
-	}
-	return secretNamespace
+func (t *ClusterToken) GetSecretBasicAuth() bool {
+	return t.Spec.Secret.BasicAuth
 }
 
 func (t *ClusterToken) GetInstallationTokenOptions() *github.InstallationTokenOptions {
@@ -148,27 +145,33 @@ func (t *ClusterToken) GetInstallationTokenOptions() *github.InstallationTokenOp
 	}
 }
 
-func (t *ClusterToken) SetManagedSecret() {
-	t.Status.ManagedSecretName = t.GetSecretName()
-	t.Status.ManagedSecretNamespace = t.GetSecretNamespace()
+func (t *ClusterToken) GetManagedSecret() ManagedSecret {
+	return t.Status.ManagedSecret
 }
 
-func (t *ClusterToken) ManagedSecretChanged() bool {
-	if t.Status.ManagedSecretName == "" && t.Status.ManagedSecretNamespace == "" {
-		return false
+func (t *ClusterToken) UpdateManagedSecret() (changed bool) {
+	if !t.Status.ManagedSecret.MatchesSpec(t) {
+		t.Status.ManagedSecret = ManagedSecret{
+			Namespace: t.GetSecretNamespace(),
+			Name:      t.GetSecretName(),
+			BasicAuth: t.GetSecretBasicAuth(),
+		}
+		return true
 	}
-	return t.Status.ManagedSecretName != t.GetSecretName() ||
-		t.Status.ManagedSecretNamespace != t.GetSecretNamespace()
+	return false
 }
 
-func (t *ClusterToken) GetStatusTimestamps() (createdAt, refreshAt, expiresAt time.Time) {
-	return t.Status.IAT.CreatedAt.Time, t.Status.IAT.RefreshAt.Time, t.Status.IAT.ExpiresAt.Time
+func (t *ClusterToken) GetStatusTimestamps() (createdAt, expiresAt time.Time) {
+	return t.Status.IAT.CreatedAt.Time, t.Status.IAT.ExpiresAt.Time
 }
 
 func (t *ClusterToken) SetStatusTimestamps(expiresAt time.Time) {
 	t.Status.IAT.ExpiresAt = metav1.NewTime(expiresAt)
 	t.Status.IAT.CreatedAt = metav1.NewTime(t.Status.IAT.ExpiresAt.Add(-ghapp.TokenValidity))
-	t.Status.IAT.RefreshAt = metav1.NewTime(t.Status.IAT.CreatedAt.Add(t.Spec.RefreshInterval.Duration))
+}
+
+func (t *ClusterToken) GetStatusConditions() []metav1.Condition {
+	return t.Status.Conditions
 }
 
 func (t *ClusterToken) SetStatusCondition(condition metav1.Condition) (changed bool) {

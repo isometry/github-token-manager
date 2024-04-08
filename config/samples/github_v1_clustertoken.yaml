@@ -9,7 +9,8 @@ metadata:
     app.kubernetes.io/created-by: github-token-manager
   name: clustertoken-sample
 spec:
-  secretNamespace: default
+  secret:
+    namespace: default
   permissions:
     metadata: read
   refreshInterval: 10m
