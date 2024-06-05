@@ -1,3 +1,7 @@
+[![CodeQL](https://github.com/isometry/github-token-manager/actions/workflows/codeql.yaml/badge.svg)](https://github.com/isometry/github-token-manager/actions/workflows/codeql.yaml)
+[![Publish](https://github.com/isometry/github-token-manager/actions/workflows/publish.yaml/badge.svg)](https://github.com/isometry/github-token-manager/actions/workflows/publish.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/isometry/github-token-manager)](https://goreportcard.com/report/github.com/isometry/github-token-manager)
+
 # github-token-manager
 
 Kubernetes operator to manage fine-grained, ephemeral Access Tokens generated from GitHub App credentials.
@@ -14,6 +18,27 @@ This operator functions similarly to cert-manager, but instead of managing certi
 
 * A Kubernetes cluster (v1.21+)
 * A [GitHub App](https://docs.github.com/en/apps/creating-github-apps) with permissions and repository assignments sufficient to meet the needs of all anticipated GitHub API interactions. Typically: `metadata: read`, `contents: read`, `statuses: write`.
+
+#### Example `github-app-credentials` secret
+<details>
+    <summary><i>expand me! ✨</i></summary>
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: github-app-credentials
+  namespace: default
+data:
+  github-token-manager.yaml: |
+      ##### BASE64 ENCODED #####
+      appID: "<app-id>"
+      installationID: "<installation-id>"
+      privateKey: |
+        ----- <BEGIN RSA PRIVATE KEY> -----
+```
+
+</details>
 
 ### To Deploy on the cluster
 

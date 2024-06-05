@@ -1,0 +1,237 @@
+{{- if .Values.rbac.install }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: {{ include "chart.fullname" . }}
+    app.kubernetes.io/managed-by: helm
+    app.kubernetes.io/instance: manager-sa
+    app.kubernetes.io/name: serviceaccount
+    app.kubernetes.io/part-of: {{ include "chart.fullname" . }}
+  name: {{ include "chart.fullname" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: {{ include "chart.fullname" . }}
+    app.kubernetes.io/instance: leader-election-role
+    app.kubernetes.io/managed-by: helm
+    app.kubernetes.io/name: role
+    app.kubernetes.io/part-of: {{ include "chart.fullname" . }}
+  name: {{ include "chart.fullname" . }}-leader-election-role
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: {{ include "chart.fullname" . }}
+    app.kubernetes.io/instance: leader-election-rolebinding
+    app.kubernetes.io/managed-by: helm
+    app.kubernetes.io/name: rolebinding
+    app.kubernetes.io/part-of: {{ include "chart.fullname" . }}
+  name: {{ include "chart.fullname" . }}-leader-election-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "chart.fullname" . }}-leader-election-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "chart.fullname" . }}
+    namespace: {{ include "chart.namespace" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "chart.fullname" . }}-role
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - github.as-code.io
+    resources:
+      - clustertokens
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - github.as-code.io
+    resources:
+      - clustertokens/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - github.as-code.io
+    resources:
+      - clustertokens/status
+    verbs:
+      - get
+      - patch
+      - update
+  - apiGroups:
+      - github.as-code.io
+    resources:
+      - tokens
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - github.as-code.io
+    resources:
+      - tokens/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - github.as-code.io
+    resources:
+      - tokens/status
+    verbs:
+      - get
+      - patch
+      - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/component: kube-rbac-proxy
+    app.kubernetes.io/created-by: {{ include "chart.fullname" . }}
+    app.kubernetes.io/instance: metrics-reader
+    app.kubernetes.io/managed-by: helm
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/part-of: {{ include "chart.fullname" . }}
+  name: {{ include "chart.fullname" . }}-metrics-reader
+rules:
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/component: kube-rbac-proxy
+    app.kubernetes.io/created-by: {{ include "chart.fullname" . }}
+    app.kubernetes.io/instance: proxy-role
+    app.kubernetes.io/managed-by: helm
+    app.kubernetes.io/name: clusterrole
+    app.kubernetes.io/part-of: {{ include "chart.fullname" . }}
+  name: {{ include "chart.fullname" . }}-proxy-role
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+  - apiGroups:
+      - authorization.k8s.io
+    resources:
+      - subjectaccessreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/component: rbac
+    app.kubernetes.io/created-by: {{ include "chart.fullname" . }}
+    app.kubernetes.io/instance: manager-rolebinding
+    app.kubernetes.io/managed-by: helm
+    app.kubernetes.io/name: clusterrolebinding
+    app.kubernetes.io/part-of: {{ include "chart.fullname" . }}
+  name: {{ include "chart.fullname" . }}-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "chart.fullname" . }}-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "chart.fullname" . }}
+    namespace: {{ include "chart.namespace" . }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app.kubernetes.io/component: kube-rbac-proxy
+    app.kubernetes.io/created-by: {{ include "chart.fullname" . }}
+    app.kubernetes.io/instance: proxy-rolebinding
+    app.kubernetes.io/managed-by: helm
+    app.kubernetes.io/name: clusterrolebinding
+    app.kubernetes.io/part-of: {{ include "chart.fullname" . }}
+  name: {{ include "chart.fullname" . }}-proxy-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "chart.fullname" . }}-proxy-role
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "chart.fullname" . }}
+    namespace: {{ include "chart.namespace" . }}
+{{- end }}
