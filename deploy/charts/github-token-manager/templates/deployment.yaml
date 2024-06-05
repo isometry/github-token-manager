@@ -1,28 +1,30 @@
 ---
+{{- $deployment := .Values.deployment }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app.kubernetes.io/component: manager
-    app.kubernetes.io/created-by: {{ include "chart.fullname" . }}
-    app.kubernetes.io/instance: manager
-    app.kubernetes.io/managed-by: helm
-    app.kubernetes.io/name: deployment
-    app.kubernetes.io/part-of: {{ include "chart.fullname" . }}
-    control-plane: manager
+    component: deployment
+    {{- include "labels" . | nindent 4 }}
+    {{- with $deployment.extraLabels -}}{{ toYaml . | nindent 4 }}{{- end }}
+  {{- with mergeOverwrite (.Values.commonAnnotations | default dict) $deployment.annotations }}
+    annotations:
+      {{- range $key, $value := . }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+    {{- end }}
   name: {{ include "chart.fullname" . }}
 spec:
-  {{- $deployment := .Values.deployment }}
   replicas: {{ $deployment.replicas }}
   selector:
     matchLabels:
-      control-plane: manager
+      {{- include "selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
         kubectl.kubernetes.io/default-container: manager
       labels:
-        control-plane: manager
+        {{- include "selectorLabels" . | nindent 8 }}
     spec:
       {{- with $deployment.tolerations }}
       tolerations:
@@ -32,7 +34,6 @@ spec:
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      hostNetwork: {{ $deployment.hostNetwork }}
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -63,9 +64,9 @@ spec:
               protocol: TCP
           resources:
             limits:
-              {{ $kubeRbacProxy.resources.limits | toYaml | nindent 14 }}
+              {{- $kubeRbacProxy.resources.limits | toYaml | nindent 14 }}
             requests:
-              {{ $kubeRbacProxy.resources.requests | toYaml | nindent 14 }}
+              {{- $kubeRbacProxy.resources.requests | toYaml | nindent 14 }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -94,9 +95,9 @@ spec:
             periodSeconds: 10
           resources:
             limits:
-              {{ $githubTokenManager.resources.limits | toYaml | nindent 14 }}
+              {{- $githubTokenManager.resources.limits | toYaml | nindent 14 }}
             requests:
-              {{ $githubTokenManager.resources.requests | toYaml | nindent 14 }}
+              {{- $githubTokenManager.resources.requests | toYaml | nindent 14 }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

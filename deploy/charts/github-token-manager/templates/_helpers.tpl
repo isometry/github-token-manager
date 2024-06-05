@@ -28,3 +28,29 @@ Deployment namespace
 {{- define "chart.namespace" -}}
 {{- default .Release.Namespace .Values.namespace }}
 {{- end }}
+
+{{/*
+Selector labels for Deployment and Service
+*/}}
+{{- define "selectorLabels" -}}
+app.kubernetes.io/name: {{ include "chart.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+Common labels that should be on every resource
+*/}}
+{{- define "labels" -}}
+app: {{ include "chart.name" . }}
+{{ include "selectorLabels" . }}
+{{-   if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{-   end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{-   with .Values.commonLabels }}
+{{-     range $key, $value := . }}
+{{ $key }}: {{ $value | quote }}
+{{-     end }}
+{{-   end }}
+{{- end }}

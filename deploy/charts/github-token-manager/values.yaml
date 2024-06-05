@@ -1,4 +1,10 @@
 ---
+# Common values
+commonLabels: ~
+commonAnnotations: ~
+nameOverride: ~
+fullnameOverride: ~
+
 ## namespace: defaults to the namespace where the chart is deployed if not specified
 namespace: ~
 
@@ -16,20 +22,24 @@ crds:
 rbac:
   install: true
 
-## service
-##   type: ClusterIP | NodePort | LoadBalancer | ExternalName
-##   ports: list of ports
-##     name: name of the port
-##     port: port number
-##     protocol: protocol
-##     targetPort: target port
-service:
-  type: ClusterIP
-  ports:
-    - name: https
-      port: 8443
-      protocol: TCP
-      targetPort: https
+## metrics:
+##   enabled: true | false
+##   service
+##     type: ClusterIP | NodePort | LoadBalancer | ExternalName
+##     ports: list of ports
+##       name: name of the port
+##       port: port number
+##       protocol: protocol
+##       targetPort: target port
+metrics:
+  enabled: true
+  service:
+    type: ClusterIP
+    ports:
+      - name: https
+        port: 8443
+        protocol: TCP
+        targetPort: https
 
 ## deployment
 ##   replicas: number of replicas
@@ -45,7 +55,7 @@ service:
 ##         repository: image repository
 ##         tag: image tag
 deployment:
-  hostNetwork: false
+  annotations: {}
   replicas: 1
   tolerations: ~
   nodeSelector: ~
