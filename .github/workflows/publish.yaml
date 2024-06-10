@@ -1,0 +1,54 @@
+---
+name: Publish Image & Chart
+
+on:
+  push:
+    tags: ["v*.*.*"]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-image:
+    name: Publish Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          check-latest: true
+
+      - name: Setup Ko
+        uses: ko-build/setup-ko@v0.6
+
+      - name: Run Ko
+        run: |
+          make ko-build IMG=ghcr.io/isometry/github-token-manager:${GITHUB_REF#refs/tags/v}
+
+  publish-chart:
+    name: Publish Chart
+    runs-on: ubuntu-latest
+    needs: publish-image
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and Push Helm Chart
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          helm package deploy/charts/github-token-manager --destination _build --version "$VERSION" --app-version "$VERSION"
+          helm push _build/github-token-manager-*.tgz oci://ghcr.io/isometry/charts

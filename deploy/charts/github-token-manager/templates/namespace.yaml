@@ -1,0 +1,14 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    component: namespace
+    {{- include "labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations | default dict }}
+  annotations:
+    {{- range $key, $value := . }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+  {{- end }}
+  name: {{ include "chart.namespace" . }}

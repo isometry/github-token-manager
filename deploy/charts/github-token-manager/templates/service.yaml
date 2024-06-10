@@ -1,0 +1,23 @@
+{{- if .Values.metrics.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    component: service
+    {{- include "labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations | default dict }}
+  annotations:
+    {{- range $key, $value := . }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+  {{- end }}
+  name: {{ include "chart.fullname" . }}-metrics-service
+spec:
+  {{- $service := .Values.metrics.service }}
+  type: {{ .Values.metrics.service.type }}
+  ports:
+    {{ $service.ports | toYaml | nindent 4 }}
+  selector:
+    {{- include "selectorLabels" . | nindent 4 }}
+{{- end }}

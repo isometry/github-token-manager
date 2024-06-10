@@ -1,0 +1,84 @@
+---
+# Common values
+commonLabels: ~
+commonAnnotations: ~
+nameOverride: ~
+fullnameOverride: ~
+
+## namespace: defaults to the namespace where the chart is deployed if not specified
+namespace: ~
+
+## crds
+##   install: true | false
+##     true: install the CRDs
+##     false: do not install the CRDs
+crds:
+  install: true
+
+## rbac
+##   create: true | false
+##     true: create the RBAC resources
+##     false: do not create the RBAC resources
+rbac:
+  install: true
+
+## metrics:
+##   enabled: true | false
+##   service
+##     type: ClusterIP | NodePort | LoadBalancer | ExternalName
+##     ports: list of ports
+##       name: name of the port
+##       port: port number
+##       protocol: protocol
+##       targetPort: target port
+metrics:
+  enabled: true
+  service:
+    type: ClusterIP
+    ports:
+      - name: https
+        port: 8443
+        protocol: TCP
+        targetPort: https
+
+## deployment
+##   replicas: number of replicas
+##   tolerations: list of tolerations (optional)
+##   nodeSelector: node selector (optional)
+##   containers: list of containers
+##     githubTokenManager:
+##       image:
+##         repository: image repository
+##         tag: image tag
+##     kubeRbacProxy:
+##       image:
+##         repository: image repository
+##         tag: image tag
+deployment:
+  annotations: {}
+  replicas: 1
+  tolerations: ~
+  nodeSelector: ~
+  containers:
+    githubTokenManager:
+      image:
+        repository: ghcr.io/isometry/github-token-manager
+        tag: latest
+      resources:
+        limits:
+          cpu: 500m
+          memory: 128Mi
+        requests:
+          cpu: 5m
+          memory: 64Mi
+    kubeRbacProxy:
+      image:
+        repository: gcr.io/kubebuilder/kube-rbac-proxy
+        tag: v0.16.0
+      resources:
+        limits:
+          cpu: 500m
+          memory: 128Mi
+        requests:
+          cpu: 5m
+          memory: 64Mi

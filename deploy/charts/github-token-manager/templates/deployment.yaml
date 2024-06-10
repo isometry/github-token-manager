@@ -1,0 +1,120 @@
+---
+{{- $deployment := .Values.deployment }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    component: deployment
+    {{- include "labels" . | nindent 4 }}
+    {{- with $deployment.extraLabels -}}{{ toYaml . | nindent 4 }}{{- end }}
+  {{- with mergeOverwrite (.Values.commonAnnotations | default dict) $deployment.annotations }}
+    annotations:
+      {{- range $key, $value := . }}
+      {{ $key }}: {{ $value | quote }}
+      {{- end }}
+    {{- end }}
+  name: {{ include "chart.fullname" . }}
+spec:
+  replicas: {{ $deployment.replicas }}
+  selector:
+    matchLabels:
+      {{- include "selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: manager
+      labels:
+        {{- include "selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with $deployment.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $deployment.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/arch
+                    operator: In
+                    values:
+                      - amd64
+                      - arm64
+                      - ppc64le
+                      - s390x
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+      containers:
+        {{- $kubeRbacProxy := $deployment.containers.kubeRbacProxy }}
+        - args:
+            - --secure-listen-address=0.0.0.0:8443
+            - --upstream=http://127.0.0.1:8080/
+            - --v=0
+          image: {{ $kubeRbacProxy.image.repository }}:{{ $kubeRbacProxy.image.tag }}
+          name: kube-rbac-proxy
+          ports:
+            - name: https
+              containerPort: 8443
+              protocol: TCP
+          resources:
+            limits:
+              {{- $kubeRbacProxy.resources.limits | toYaml | nindent 14 }}
+            requests:
+              {{- $kubeRbacProxy.resources.requests | toYaml | nindent 14 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+        {{- $githubTokenManager := $deployment.containers.githubTokenManager }}
+        - args:
+            - --health-probe-bind-address=:8081
+            - --metrics-bind-address=127.0.0.1:8080
+            - --leader-elect
+          command:
+            - /ko-app/cmd
+          image: {{ $githubTokenManager.image.repository }}:{{ $githubTokenManager.image.tag }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          name: manager
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              {{- $githubTokenManager.resources.limits | toYaml | nindent 14 }}
+            requests:
+              {{- $githubTokenManager.resources.requests | toYaml | nindent 14 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /config
+              name: ghapp
+              readOnly: true
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: {{ include "chart.fullname" . }}
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - name: ghapp
+          secret:
+            defaultMode: 444
+            secretName: github-app-credentials
