@@ -4,4 +4,4 @@ name: github-token-manager
 description: A Helm chart for github-token-manager
 
 type: application
-version: 0.1.0
+version: 0.1.3
