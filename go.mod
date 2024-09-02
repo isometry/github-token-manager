@@ -8,7 +8,7 @@ require (
 	github.com/bradleyfalzon/ghinstallation/v2 v2.11.0
 	github.com/go-logr/logr v1.4.2
 	github.com/google/go-github/v62 v62.0.0
-	github.com/onsi/ginkgo/v2 v2.20.1
+	github.com/onsi/ginkgo/v2 v2.20.2
 	github.com/onsi/gomega v1.34.2
 	github.com/spf13/viper v1.19.0
 	k8s.io/api v0.31.0
