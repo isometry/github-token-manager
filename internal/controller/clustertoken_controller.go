@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,10 +58,10 @@ func (r *ClusterTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	log := log.FromContext(ctx)
 
 	if app == nil {
-		app, err = ghapp.NewGHAppFromConfig()
+		app, err = ghapp.NewGHApp(ctx)
 		if err != nil {
 			log.Error(err, "failed to load GitHub App credentials")
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: time.Minute}, err
 		}
 	}
 

@@ -3,17 +3,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: {{ include "chart.fullname" . }}
+  {{- with mergeOverwrite (.Values.commonAnnotations | default dict) $deployment.annotations }}
+  annotations:
+    {{- range $key, $value := . }}
+    {{ $key }}: {{ $value | quote }}
+    {{- end }}
+  {{- end }}
   labels:
     component: deployment
     {{- include "labels" . | nindent 4 }}
     {{- with $deployment.extraLabels -}}{{ toYaml . | nindent 4 }}{{- end }}
-  {{- with mergeOverwrite (.Values.commonAnnotations | default dict) $deployment.annotations }}
-    annotations:
-      {{- range $key, $value := . }}
-      {{ $key }}: {{ $value | quote }}
-      {{- end }}
-    {{- end }}
-  name: {{ include "chart.fullname" . }}
 spec:
   replicas: {{ $deployment.replicas }}
   selector:
@@ -44,8 +44,6 @@ spec:
                     values:
                       - amd64
                       - arm64
-                      - ppc64le
-                      - s390x
                   - key: kubernetes.io/os
                     operator: In
                     values:
@@ -78,7 +76,7 @@ spec:
             - --metrics-bind-address=127.0.0.1:8080
             - --leader-elect
           command:
-            - /ko-app/cmd
+            - /ko-app/manager
           image: {{ $githubTokenManager.image.repository }}:{{ $githubTokenManager.image.tag }}
           livenessProbe:
             httpGet:
@@ -105,7 +103,7 @@ spec:
                 - ALL
           volumeMounts:
             - mountPath: /config
-              name: ghapp
+              name: config
               readOnly: true
       securityContext:
         runAsNonRoot: true
@@ -114,7 +112,7 @@ spec:
       serviceAccountName: {{ include "chart.fullname" . }}
       terminationGracePeriodSeconds: 10
       volumes:
-        - name: ghapp
+        - name: config
           secret:
             defaultMode: 444
-            secretName: github-app-credentials
+            secretName: gtm-config

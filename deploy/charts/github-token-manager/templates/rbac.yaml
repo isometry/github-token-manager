@@ -3,30 +3,30 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  labels:
-    component: rbac
-    {{- include "labels" . | nindent 4 }}
+  name: {{ include "chart.fullname" . }}
   {{- with .Values.commonAnnotations | default dict }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
   {{- end }}
-  name: {{ include "chart.fullname" . }}
+  labels:
+    component: rbac
+    {{- include "labels" . | nindent 4 }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  labels:
-    component: rbac
-    {{- include "labels" . | nindent 4 }}
+  name: {{ include "chart.fullname" . }}-leader-election-role
   {{- with .Values.commonAnnotations | default dict }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
   {{- end }}
-  name: {{ include "chart.fullname" . }}-leader-election-role
+  labels:
+    component: rbac
+    {{- include "labels" . | nindent 4 }}
 rules:
   - apiGroups:
       - ""
@@ -63,16 +63,16 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  labels:
-    component: rbac
-    {{- include "labels" . | nindent 4 }}
+  name: {{ include "chart.fullname" . }}-leader-election-rolebinding
   {{- with .Values.commonAnnotations | default dict }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
   {{- end }}
-  name: {{ include "chart.fullname" . }}-leader-election-rolebinding
+  labels:
+    component: rbac
+    {{- include "labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -86,15 +86,15 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: {{ include "chart.fullname" . }}-role
-  labels:
-    component: rbac
-    {{- include "labels" . | nindent 4 }}
   {{- with .Values.commonAnnotations | default dict }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
   {{- end }}
+  labels:
+    component: rbac
+    {{- include "labels" . | nindent 4 }}
 rules:
   - apiGroups:
       - ""
@@ -171,16 +171,16 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  labels:
-    component: rbac
-    {{- include "labels" . | nindent 4 }}
+  name: {{ include "chart.fullname" . }}-metrics-reader
   {{- with .Values.commonAnnotations | default dict }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
   {{- end }}
-  name: {{ include "chart.fullname" . }}-metrics-reader
+  labels:
+    component: rbac
+    {{- include "labels" . | nindent 4 }}
 rules:
   - nonResourceURLs:
       - /metrics
@@ -190,16 +190,16 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  labels:
-    component: rbac
-    {{- include "labels" . | nindent 4 }}
+  name: {{ include "chart.fullname" . }}-proxy-role
   {{- with .Values.commonAnnotations | default dict }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
   {{- end }}
-  name: {{ include "chart.fullname" . }}-proxy-role
+  labels:
+    component: rbac
+    {{- include "labels" . | nindent 4 }}
 rules:
   - apiGroups:
       - authentication.k8s.io
@@ -217,16 +217,16 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  labels:
-    component: rbac
-    {{- include "labels" . | nindent 4 }}
+  name: {{ include "chart.fullname" . }}-rolebinding
   {{- with .Values.commonAnnotations }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
   {{- end }}
-  name: {{ include "chart.fullname" . }}-rolebinding
+  labels:
+    component: rbac
+    {{- include "labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -239,16 +239,16 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  labels:
-    component: rbac
-    {{- include "labels" . | nindent 4 }}
+  name: {{ include "chart.fullname" . }}-proxy-rolebinding
   {{- with .Values.commonAnnotations | default dict }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
   {{- end }}
-  name: {{ include "chart.fullname" . }}-proxy-rolebinding
+  labels:
+    component: rbac
+    {{- include "labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

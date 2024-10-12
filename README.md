@@ -19,7 +19,7 @@ This operator functions similarly to cert-manager, but instead of managing certi
 * A Kubernetes cluster (v1.21+)
 * A [GitHub App](https://docs.github.com/en/apps/creating-github-apps) with permissions and repository assignments sufficient to meet the needs of all anticipated GitHub API interactions. Typically: `metadata: read`, `contents: read`, `statuses: write`.
 
-#### Example `github-app-credentials` secret
+#### Example `gtm-config` secret
 <details>
     <summary><i>expand me! ✨</i></summary>
 
@@ -27,15 +27,18 @@ This operator functions similarly to cert-manager, but instead of managing certi
 apiVersion: v1
 kind: Secret
 metadata:
-  name: github-app-credentials
-  namespace: default
-data:
-  github-token-manager.yaml: |
-      ##### BASE64 ENCODED #####
-      appID: "<app-id>"
-      installationID: "<installation-id>"
-      privateKey: |
-        ----- <BEGIN RSA PRIVATE KEY> -----
+  name: gtm-config
+  namespace: github-token-manager
+stringData:
+  gtm.yaml: |
+    app_id: <app-id>
+    installation_id: <installation-id>
+    provider: file
+    key: /config/private.key
+  private.key: |
+    -----BEGIN RSA PRIVATE KEY-----
+    ...elided...
+    -----END RSA PRIVATE KEY-----
 ```
 
 </details>
