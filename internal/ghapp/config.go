@@ -1,112 +1,74 @@
 package ghapp
 
 import (
-	"crypto/x509"
-	"encoding/pem"
-	"errors"
+	"context"
 	"fmt"
 	"time"
 
 	"github.com/spf13/viper"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 var (
 	ConfigPath = "/config"
-	ConfigName = "github-token-manager"
-	// AppIdFile          = "app_id"
-	// InstallationIdFile = "installation_id"
-	// PrivateKeyFile     = "private_key"
+	ConfigName = "gtm"
 )
 
-type Config struct {
-	AppID          int64  `mapstructure:"appId"`
-	PrivateKey     string `mapstructure:"privateKey"`
-	InstallationID int64  `mapstructure:"installationId"`
+type OperatorConfig struct {
+	AppID          int64  `mapstructure:"app_id"`
+	InstallationID int64  `mapstructure:"installation_id"`
+	Provider       string `mapstructure:"provider"`
+	Key            string `mapstructure:"key"`
+}
+
+func (c *OperatorConfig) GetAppID() int64 {
+	return c.AppID
+}
+
+func (c *OperatorConfig) GetInstallationID() int64 {
+	return c.InstallationID
+}
+
+func (c *OperatorConfig) GetProvider() string {
+	return c.Provider
+}
+
+func (c *OperatorConfig) GetKey() string {
+	return c.Key
 }
 
 // TokenValidity is the duration for which a token is valid. Always exactly 1 hour.
 const TokenValidity = time.Hour
 
-func LoadConfig() (*Config, error) {
-	// appIdPath := path.Join(ConfigPath, AppIdFile)
-	// rawAppID, err := os.ReadFile(appIdPath)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("unable to read %s: %w", appIdPath, err)
-	// }
-
-	// appID, err := strconv.ParseInt(string(rawAppID), 10, 64)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("unable to parse %s as int64: %w", appIdPath, err)
-	// }
-
-	// privateKeyPath := path.Join(ConfigPath, PrivateKeyFile)
-	// rawPrivateKey, err := os.ReadFile(privateKeyPath)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("unable to read %s: %w", privateKeyPath, err)
-	// }
-
-	// config := &Config{
-	// 	AppID:      appID,
-	// 	PrivateKey: rawPrivateKey,
-	// }
-
-	// // Load installation ID if it exists.
-	// installationIdPath := path.Join(ConfigPath, InstallationIdFile)
-	// if _, err := os.Stat(installationIdPath); err == nil {
-	// 	rawInstallationId, err := os.ReadFile(installationIdPath)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("unable to read %s: %w", installationIdPath, err)
-	// 	}
-	// 	installationId, err := strconv.ParseInt(string(rawInstallationId), 10, 64)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("unable to parse %s as int64: %w", installationIdPath, err)
-	// 	}
-	// 	config.InstallationID = installationId
-	// }
+func LoadConfig(ctx context.Context) (*OperatorConfig, error) {
+	log := log.FromContext(ctx)
 
 	viper.AutomaticEnv()
+	viper.SetEnvPrefix("GTM")
+
+	viper.BindEnv("app_id", "GTM_APP_ID", "GITHUB_APP_ID")
+	viper.BindEnv("installation_id", "GTM_INSTALLATION_ID", "GITHUB_INSTALLATION_ID")
+	viper.BindEnv("provider", "GTM_PROVIDER", "KMS_PROVIDER")
+	viper.BindEnv("key", "GTM_KEY", "KMS_KEY", "GITHUB_PRIVATE_KEY")
+
+	viper.SetDefault("provider", "file")
 
 	viper.AddConfigPath(ConfigPath)
 	viper.SetConfigName(ConfigName)
 
 	if err := viper.ReadInConfig(); err != nil {
-		return nil, fmt.Errorf("unable to read config: %w", err)
-	}
-
-	config := &Config{}
-
-	if err := viper.Unmarshal(config); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return nil, fmt.Errorf("invalid configuration file: %w", err)
+			return nil, fmt.Errorf("error reading configuration file: %w", err)
+		} else {
+			log.Info("no configuration file found, continuing with environment variables only")
 		}
 	}
 
-	if config.AppID == 0 {
-		return nil, fmt.Errorf("configuration: app_id is required")
-	}
+	config := &OperatorConfig{}
 
-	// Check that the PrivateKey is a valid PEM-encoded RSA private key.
-	if err := config.CheckPrivateKey(); err != nil {
-		return nil, fmt.Errorf("configuration: invalid private_key: %w", err)
+	if err := viper.Unmarshal(config); err != nil {
+		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	return config, nil
-}
-
-func (c *Config) CheckPrivateKey() error {
-	privateKey := []byte(c.PrivateKey)
-	if privateKey == nil {
-		return errors.New("unset")
-	}
-
-	block, _ := pem.Decode(privateKey)
-	if block == nil || block.Type != "RSA PRIVATE KEY" {
-		return errors.New("failed to decode PEM")
-	}
-
-	if _, err := x509.ParsePKCS1PrivateKey(block.Bytes); err != nil {
-		return fmt.Errorf("failed to parse RSA private key: %w", err)
-	}
-
-	return nil
 }

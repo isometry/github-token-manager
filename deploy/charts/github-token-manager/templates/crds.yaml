@@ -3,16 +3,16 @@
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  labels:
-    component: crd
-    {{- include "labels" . | nindent 4 }}
+  name: clustertokens.github.as-code.io
   {{- with .Values.commonAnnotations | default dict }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
   {{- end }}
-  name: clustertokens.github.as-code.io
+  labels:
+    component: crd
+    {{- include "labels" . | nindent 4 }}
 spec:
   group: github.as-code.io
   names:
@@ -48,13 +48,15 @@ spec:
               description: ClusterTokenSpec defines the desired state of ClusterToken
               properties:
                 installationID:
-                  description: Specify or override the InstallationID of the GitHub
+                  description:
+                    Specify or override the InstallationID of the GitHub
                     App for this Token
                   example: "123456789"
                   format: int64
                   type: integer
                 permissions:
-                  description: Specify the permissions for the token as a subset of
+                  description:
+                    Specify the permissions for the token as a subset of
                     those of the GitHub App
                   example:
                     contents: read
@@ -243,19 +245,21 @@ spec:
                   type: object
                 refreshInterval:
                   default: 10m
-                  description: 'Specify how often to refresh the token (maximum: 1h)'
+                  description: "Specify how often to refresh the token (maximum: 1h)"
                   example: 45m
                   format: duration
                   type: string
                 repositories:
-                  description: Specify the repositories for which the token should have
+                  description:
+                    Specify the repositories for which the token should have
                     access
                   items:
                     type: string
                   maxItems: 500
                   type: array
                 repositoryIDs:
-                  description: Specify the repository IDs for which the token should
+                  description:
+                    Specify the repository IDs for which the token should
                     have access
                   items:
                     format: int64
@@ -265,11 +269,13 @@ spec:
                 secret:
                   properties:
                     basicAuth:
-                      description: Create a secret with 'username' and 'password' fields
+                      description:
+                        Create a secret with 'username' and 'password' fields
                         for HTTP Basic Auth rather than simply 'token'
                       type: boolean
                     name:
-                      description: Name for the Secret managed by this ClusterToken
+                      description:
+                        Name for the Secret managed by this ClusterToken
                         (defaults to the name of the ClusterToken)
                       maxLength: 253
                       type: string
@@ -289,16 +295,9 @@ spec:
               properties:
                 conditions:
                   items:
-                    description: "Condition contains details for one aspect of the current
-                    state of this API Resource.\n---\nThis struct is intended for
-                    direct use as an array at the field path .status.conditions.  For
-                    example,\n\n\n\ttype FooStatus struct{\n\t    // Represents the
-                    observations of a foo's current state.\n\t    // Known .status.conditions.type
-                    are: \"Available\", \"Progressing\", and \"Degraded\"\n\t    //
-                    +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t    // +listType=map\n\t
-                    \   // +listMapKey=type\n\t    Conditions []metav1.Condition `json:\"conditions,omitempty\"
-                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
-                    \   // other fields\n\t}"
+                    description:
+                      Condition contains details for one aspect of the current
+                      state of this API Resource.
                     properties:
                       lastTransitionTime:
                         description: |-
@@ -339,12 +338,7 @@ spec:
                           - Unknown
                         type: string
                       type:
-                        description: |-
-                          type of condition in CamelCase or in foo.example.com/CamelCase.
-                          ---
-                          Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
-                          useful (see .node.status.conditions), the ability to deconflict is important.
-                          The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase.
                         maxLength: 316
                         pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                         type: string
@@ -388,16 +382,16 @@ spec:
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  labels:
-    component: crd
-    {{- include "labels" . | nindent 4 }}
+  name: tokens.github.as-code.io
   {{- with .Values.commonAnnotations | default dict }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
   {{- end }}
-  name: tokens.github.as-code.io
+  labels:
+    component: crd
+    {{- include "labels" . | nindent 4 }}
 spec:
   group: github.as-code.io
   names:
@@ -433,13 +427,15 @@ spec:
               description: TokenSpec defines the desired state of Token
               properties:
                 installationID:
-                  description: Specify or override the InstallationID of the GitHub
+                  description:
+                    Specify or override the InstallationID of the GitHub
                     App for this Token
                   example: "123456789"
                   format: int64
                   type: integer
                 permissions:
-                  description: Specify the permissions for the token as a subset of
+                  description:
+                    Specify the permissions for the token as a subset of
                     those of the GitHub App
                   example:
                     contents: read
@@ -628,19 +624,21 @@ spec:
                   type: object
                 refreshInterval:
                   default: 10m
-                  description: 'Specify how often to refresh the token (maximum: 1h)'
+                  description: "Specify how often to refresh the token (maximum: 1h)"
                   example: 45m
                   format: duration
                   type: string
                 repositories:
-                  description: Specify the repositories for which the token should have
+                  description:
+                    Specify the repositories for which the token should have
                     access
                   items:
                     type: string
                   maxItems: 500
                   type: array
                 repositoryIDs:
-                  description: Specify the repository IDs for which the token should
+                  description:
+                    Specify the repository IDs for which the token should
                     have access
                   items:
                     format: int64
@@ -651,11 +649,13 @@ spec:
                   description: Override the default token secret name and type
                   properties:
                     basicAuth:
-                      description: Create a secret with 'username' and 'password' fields
+                      description:
+                        Create a secret with 'username' and 'password' fields
                         for HTTP Basic Auth rather than simply 'token'
                       type: boolean
                     name:
-                      description: Name for the Secret managed by this ClusterToken
+                      description:
+                        Name for the Secret managed by this ClusterToken
                         (defaults to the name of the Token)
                       maxLength: 253
                       type: string
@@ -666,16 +666,9 @@ spec:
               properties:
                 conditions:
                   items:
-                    description: "Condition contains details for one aspect of the current
-                    state of this API Resource.\n---\nThis struct is intended for
-                    direct use as an array at the field path .status.conditions.  For
-                    example,\n\n\n\ttype FooStatus struct{\n\t    // Represents the
-                    observations of a foo's current state.\n\t    // Known .status.conditions.type
-                    are: \"Available\", \"Progressing\", and \"Degraded\"\n\t    //
-                    +patchMergeKey=type\n\t    // +patchStrategy=merge\n\t    // +listType=map\n\t
-                    \   // +listMapKey=type\n\t    Conditions []metav1.Condition `json:\"conditions,omitempty\"
-                    patchStrategy:\"merge\" patchMergeKey:\"type\" protobuf:\"bytes,1,rep,name=conditions\"`\n\n\n\t
-                    \   // other fields\n\t}"
+                    description:
+                      Condition contains details for one aspect of the current
+                      state of this API Resource.
                     properties:
                       lastTransitionTime:
                         description: |-
@@ -716,12 +709,7 @@ spec:
                           - Unknown
                         type: string
                       type:
-                        description: |-
-                          type of condition in CamelCase or in foo.example.com/CamelCase.
-                          ---
-                          Many .condition.type values are consistent across resources like Available, but because arbitrary conditions can be
-                          useful (see .node.status.conditions), the ability to deconflict is important.
-                          The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
+                        description: type of condition in CamelCase or in foo.example.com/CamelCase.
                         maxLength: 316
                         pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
                         type: string
@@ -743,8 +731,9 @@ spec:
                       type: string
                   type: object
                 managedSecret:
-                  description: 'Important: Run "make" to regenerate code after modifying
-                  this file'
+                  description:
+                    'Important: Run "make" to regenerate code after modifying
+                    this file'
                   properties:
                     basicAuth:
                       type: boolean

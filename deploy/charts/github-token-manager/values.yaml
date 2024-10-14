@@ -1,4 +1,10 @@
 ---
+config:
+  app_id: 0
+  installation_id: 0
+  provider: aws
+  key: alias/github-token-manager
+
 # Common values
 commonLabels: ~
 commonAnnotations: ~

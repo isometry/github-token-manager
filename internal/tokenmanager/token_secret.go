@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/google/go-github/v62/github"
+	"github.com/google/go-github/v66/github"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -15,8 +15,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
+	"github.com/isometry/ghait"
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
-	"github.com/isometry/github-token-manager/internal/ghapp"
 )
 
 const (
@@ -31,7 +31,7 @@ type tokenSecret struct {
 	reconciler tokenReconciler
 	key        types.NamespacedName
 	owner      tokenManager
-	ghapp      *ghapp.GHApp
+	ghait      ghait.GHAIT
 	*corev1.Secret
 }
 
@@ -43,9 +43,9 @@ func WithReconciler(reconciler tokenReconciler) Option {
 	}
 }
 
-func WithGHApp(ghapp *ghapp.GHApp) Option {
+func WithGHApp(ghait ghait.GHAIT) Option {
 	return func(s *tokenSecret) {
-		s.ghapp = ghapp
+		s.ghait = ghait
 	}
 }
 
@@ -101,7 +101,7 @@ func (s *tokenSecret) NewInstallationToken() (*github.InstallationToken, error) 
 	installationId := s.owner.GetInstallationID()
 	options := s.owner.GetInstallationTokenOptions()
 
-	return s.ghapp.CreateInstallationToken(s.ctx, installationId, options)
+	return s.ghait.NewInstallationToken(s.ctx, installationId, options)
 }
 
 func (s *tokenSecret) RefreshOwner() error {

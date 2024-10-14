@@ -1,7 +1,9 @@
 package controller
 
 import (
-	"github.com/isometry/github-token-manager/internal/ghapp"
+	"github.com/isometry/ghait"
 )
 
-var app *ghapp.GHApp // cached GHApp instance
+var (
+	app ghait.GHAIT // cached GHAIT instance
+)

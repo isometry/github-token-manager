@@ -3,16 +3,16 @@
 apiVersion: v1
 kind: Service
 metadata:
-  labels:
-    component: service
-    {{- include "labels" . | nindent 4 }}
+  name: {{ include "chart.fullname" . }}-metrics-service
   {{- with .Values.commonAnnotations | default dict }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
   {{- end }}
-  name: {{ include "chart.fullname" . }}-metrics-service
+  labels:
+    component: service
+    {{- include "labels" . | nindent 4 }}
 spec:
   {{- $service := .Values.metrics.service }}
   type: {{ .Values.metrics.service.type }}
