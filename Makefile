@@ -190,7 +190,7 @@ docker-buildx: ## Build and push docker image for the manager for cross-platform
 .PHONY: ko-build
 ko-build: ## Build the manager image using ko.
 	KO_DOCKER_REPO=$(IMAGE_TAG_BASE) \
-	ko build --bare --platform=$(PLATFORMS) --image-label org.opencontainers.image.source=$(IMAGE_SOURCE) --push ./cmd/manager
+	ko build --bare --platform=$(PLATFORMS) --image-label org.opencontainers.image.source=$(IMAGE_SOURCE) --tags "latest,$(VERSION)" --push ./cmd/manager
 	
 
 ##@ Deployment
