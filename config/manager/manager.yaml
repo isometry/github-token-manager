@@ -46,8 +46,6 @@ spec:
                     values:
                       - amd64
                       - arm64
-                      - ppc64le
-                      - s390x
                   - key: kubernetes.io/os
                     operator: In
                     values:
@@ -58,8 +56,7 @@ spec:
           type: RuntimeDefault
       containers:
         - command:
-            # - /manager
-            - /ko-app/cmd
+            - /ko-app/manager
           args:
             - --leader-elect
           image: controller:latest
@@ -91,13 +88,13 @@ spec:
               cpu: 50m
               memory: 64Mi
           volumeMounts:
-            - name: ghapp
+            - name: config
               mountPath: /config
               readOnly: true
       serviceAccountName: manager
       terminationGracePeriodSeconds: 10
       volumes:
-        - name: ghapp
+        - name: config
           secret:
             defaultMode: 444
-            secretName: github-app-credentials
+            secretName: gtm-config
