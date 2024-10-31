@@ -34,7 +34,7 @@ type TokenSpec struct {
 
 	// +optional
 	// Override the default token secret name and type
-	Secret tokenSecretSpec `json:"secret,omitempty"`
+	Secret TokenSecretSpec `json:"secret,omitempty"`
 
 	// +optional
 	// +kubebuilder:example:="123456789"
@@ -64,11 +64,19 @@ type TokenSpec struct {
 	RepositoryIDs []int64 `json:"repositoryIDs,omitempty"`
 }
 
-type tokenSecretSpec struct {
+type TokenSecretSpec struct {
 	// +optional
 	// +kubebuilder:validation:MaxLength:=253
-	// Name for the Secret managed by this ClusterToken (defaults to the name of the Token)
+	// Name for the Secret managed by this Token (defaults to the name of the Token)
 	Name string `json:"name,omitempty"`
+
+	// +optional
+	// Extra labels for the Secret managed by this Token
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// +optional
+	// Extra annotations for the Secret managed by this Token
+	Annotations map[string]string `json:"annotations,omitempty"`
 
 	// +optional
 	// Create a secret with 'username' and 'password' fields for HTTP Basic Auth rather than simply 'token'
@@ -124,6 +132,14 @@ func (t *Token) GetSecretName() string {
 		secretName = t.Spec.Secret.Name
 	}
 	return secretName
+}
+
+func (t *Token) GetSecretLabels() map[string]string {
+	return t.Spec.Secret.Labels
+}
+
+func (t *Token) GetSecretAnnotations() map[string]string {
+	return t.Spec.Secret.Annotations
 }
 
 func (t *Token) GetSecretBasicAuth() bool {

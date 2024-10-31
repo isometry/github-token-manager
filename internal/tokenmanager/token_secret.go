@@ -186,9 +186,10 @@ func (s *tokenSecret) CreateSecret() error {
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Namespace: s.owner.GetSecretNamespace(),
-			Name:      s.owner.GetSecretName(),
-			Labels:    s.SecretLabels(),
+			Namespace:   s.owner.GetSecretNamespace(),
+			Name:        s.owner.GetSecretName(),
+			Labels:      s.SecretLabels(),
+			Annotations: s.owner.GetSecretAnnotations(),
 		},
 		Data: s.SecretData(installationToken.GetToken()),
 		Type: secretType,
@@ -382,12 +383,16 @@ func (s *tokenSecret) UpdateTokenStatus(options ...tokenStatusOptions) error {
 }
 
 func (s *tokenSecret) SecretLabels() map[string]string {
-	return map[string]string{
+	secretLabels := map[string]string{
 		"app.kubernetes.io/name":       s.owner.GetType(),
 		"app.kubernetes.io/instance":   s.owner.GetName(),
 		"app.kubernetes.io/part-of":    "github-token-manager",
 		"app.kubernetes.io/created-by": "github-token-manager",
 	}
+	for k, v := range s.owner.GetSecretLabels() {
+		secretLabels[k] = v
+	}
+	return secretLabels
 }
 
 func (s *tokenSecret) SecretData(installationToken string) map[string][]byte {

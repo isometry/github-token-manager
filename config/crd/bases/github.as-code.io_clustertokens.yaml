@@ -260,11 +260,23 @@ spec:
                   type: array
                 secret:
                   properties:
+                    annotations:
+                      additionalProperties:
+                        type: string
+                      description:
+                        Extra annotations for the Secret managed by this
+                        Token
+                      type: object
                     basicAuth:
                       description:
                         Create a secret with 'username' and 'password' fields
                         for HTTP Basic Auth rather than simply 'token'
                       type: boolean
+                    labels:
+                      additionalProperties:
+                        type: string
+                      description: Extra labels for the Secret managed by this Token
+                      type: object
                     name:
                       description:
                         Name for the Secret managed by this ClusterToken
