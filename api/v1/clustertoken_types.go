@@ -33,7 +33,7 @@ type ClusterTokenSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// +kubebuilder:validation:Required
-	Secret clusterTokenSecretSpec `json:"secret"`
+	Secret ClusterTokenSecretSpec `json:"secret"`
 
 	// +optional
 	// +kubebuilder:example:="123456789"
@@ -63,7 +63,7 @@ type ClusterTokenSpec struct {
 	RepositoryIDs []int64 `json:"repositoryIDs,omitempty"`
 }
 
-type clusterTokenSecretSpec struct {
+type ClusterTokenSecretSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength:=253
 	// +kubebuilder:example:="default"
@@ -74,6 +74,14 @@ type clusterTokenSecretSpec struct {
 	// +kubebuilder:validation:MaxLength:=253
 	// Name for the Secret managed by this ClusterToken (defaults to the name of the ClusterToken)
 	Name string `json:"name,omitempty"`
+
+	// +optional
+	// Extra labels for the Secret managed by this Token
+	Labels map[string]string `json:"labels,omitempty"`
+
+	// +optional
+	// Extra annotations for the Secret managed by this Token
+	Annotations map[string]string `json:"annotations,omitempty"`
 
 	// +optional
 	// Create a secret with 'username' and 'password' fields for HTTP Basic Auth rather than simply 'token'
@@ -131,6 +139,14 @@ func (t *ClusterToken) GetSecretName() string {
 		secretName = t.Spec.Secret.Name
 	}
 	return secretName
+}
+
+func (t *ClusterToken) GetSecretLabels() map[string]string {
+	return t.Spec.Secret.Labels
+}
+
+func (t *ClusterToken) GetSecretAnnotations() map[string]string {
+	return t.Spec.Secret.Annotations
 }
 
 func (t *ClusterToken) GetSecretBasicAuth() bool {

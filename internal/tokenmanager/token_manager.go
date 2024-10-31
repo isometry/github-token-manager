@@ -25,6 +25,8 @@ type tokenManager interface {
 	GetRefreshInterval() time.Duration
 	GetSecretNamespace() string
 	GetSecretName() string
+	GetSecretLabels() map[string]string
+	GetSecretAnnotations() map[string]string
 	GetInstallationTokenOptions() *github.InstallationTokenOptions
 	GetManagedSecret() githubv1.ManagedSecret
 	UpdateManagedSecret() (changed bool)
