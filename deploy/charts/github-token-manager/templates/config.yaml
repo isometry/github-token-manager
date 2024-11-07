@@ -1,4 +1,4 @@
-{{- if .Values.config.app_id != 0 }}
+{{- if ne (int .Values.config.app_id) 0 }}
 ---
 apiVersion: v1
 kind: Secret
