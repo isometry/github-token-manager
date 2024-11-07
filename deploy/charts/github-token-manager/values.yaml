@@ -27,6 +27,7 @@ crds:
 ##     false: do not create the RBAC resources
 rbac:
   install: true
+  serviceAccount: {}
 
 ## metrics:
 ##   enabled: true | false

@@ -3,12 +3,17 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ include "chart.fullname" . }}
-  {{- with .Values.commonAnnotations | default dict }}
+  name: {{ .Values.rbac.serviceAccount.name | default (include "chart.fullname" . ) }}
+  {{- if or .Values.rbac.serviceAccount.annotations .Values.commonAnnotations }}
   annotations:
+    {{- with .Values.rbac.serviceAccount.annotations }}
+    {{- tpl ( toYaml . ) $ | nindent 4 }}
+    {{- end }}
+  {{- with .Values.commonAnnotations | default dict }}
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
     {{- end }}
+  {{- end }}
   {{- end }}
   labels:
     component: rbac
