@@ -33,7 +33,7 @@ commonAnnotations | Common annotations for all resources | `{}`                 
 
 The `config.provider` field supported options are:
 - `aws`: The GitHub App private key is stored in AWS KMS (asymmetric, RSA_2048, sign and verify key) and the `config.key` field should be set to the alias of this KMS key.
-- `file`: The GitHub App private key is stored in a file and the `config.key` field should be set to the path to this file.
+- `file`: The GitHub App private key is embedded by YAML multiline string in the `config.key` field.
 - `gcp`: The GitHub App private key is stored in GCP KMS.
 - `vault`: The GitHub App private key is stored in HashiCorp Vault.
 
