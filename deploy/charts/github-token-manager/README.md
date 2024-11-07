@@ -7,7 +7,7 @@ This Helm chart is used to deploy the GitHub Token Manager application.
 To install the chart with the release name `my-github-token-manager`:
 
 ```sh
-helm install my-github-token-manager -f values.yaml .
+helm install my-github-token-manager -f values.yaml oci://ghcr.io/isometry/charts/github-token-manager
 ```
 
 ## Uninstalling the Chart
