@@ -6,9 +6,9 @@ metadata:
   name: {{ .Values.rbac.serviceAccount.name | default (include "chart.fullname" . ) }}
   {{- if or .Values.rbac.serviceAccount.annotations .Values.commonAnnotations }}
   annotations:
-    {{- with .Values.rbac.serviceAccount.annotations }}
+  {{- with .Values.rbac.serviceAccount.annotations | default dict }}
     {{- tpl ( toYaml . ) $ | nindent 4 }}
-    {{- end }}
+  {{- end }}
   {{- with .Values.commonAnnotations | default dict }}
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
