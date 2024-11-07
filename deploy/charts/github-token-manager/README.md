@@ -37,7 +37,7 @@ The `config.provider` field supported options are:
 - `gcp`: The GitHub App private key is stored in GCP KMS.
 - `vault`: The GitHub App private key is stored in HashiCorp Vault.
 
-When using external providers like `aws`, `gcp`, or `vault`, the application must be configured to have the necessary permissions to access the external store.
+When using external providers like `aws`, `gcp`, or `vault`, the controller's `ServiceAccount` must be configured with the necessary permissions to access the external store.
 
 ### Example values.yaml configuration for aws provider
 
