@@ -109,7 +109,7 @@ spec:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
-      serviceAccountName: {{ include "chart.fullname" . }}
+      serviceAccountName: {{ .Values.rbac.serviceAccount.name | default (include "chart.fullname" . ) }}
       terminationGracePeriodSeconds: 10
       volumes:
         - name: config
