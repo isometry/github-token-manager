@@ -5,7 +5,7 @@ go 1.23.2
 require (
 	github.com/go-logr/logr v1.4.2
 	github.com/google/go-github/v66 v66.0.0
-	github.com/isometry/ghait v0.1.1
+	github.com/isometry/ghait v0.1.2
 	github.com/onsi/ginkgo/v2 v2.21.0
 	github.com/onsi/gomega v1.35.1
 	github.com/spf13/viper v1.19.0
@@ -135,11 +135,19 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apiextensions-apiserver v0.31.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
-	k8s.io/kube-openapi v0.0.0-20241009091222-67ed5848f094 // indirect
+	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
 	k8s.io/utils v0.0.0-20241104163129-6fe5fd82f078 // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
-	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
+	sigs.k8s.io/structured-merge-diff/v4 v4.4.2 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
-replace github.com/imdario/mergo => github.com/imdario/mergo v0.3.16
+replace (
+	github.com/imdario/mergo => github.com/imdario/mergo v0.3.16
+	// Workaround upstream incompatibility introduced in kubernetes-sigs/structured-merge-diff#265
+	// Should be resolved with release of Kubernetes 1.32.0
+	// # k8s.io/apimachinery/pkg/util/managedfields/internal
+	// ../../../go/pkg/mod/k8s.io/apimachinery@v0.31.2/pkg/util/managedfields/internal/structuredmerge.go:56:4: unknown field IgnoredFields in struct literal of type merge.Updater
+	// ../../../go/pkg/mod/k8s.io/apimachinery@v0.31.2/pkg/util/managedfields/internal/structuredmerge.go:73:4: unknown field IgnoredFields in struct literal of type merge.Updater
+	sigs.k8s.io/structured-merge-diff/v4 => sigs.k8s.io/structured-merge-diff/v4 v4.4.1
+)
