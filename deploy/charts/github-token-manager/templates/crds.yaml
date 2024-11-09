@@ -4,7 +4,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: clustertokens.github.as-code.io
-  {{- with .Values.commonAnnotations | default dict }}
+  {{- with mergeOverwrite (default dict .Values.commonAnnotations) (ternary (dict "helm.sh/resource-policy" "keep") (dict) .Values.crds.keep) }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
@@ -268,11 +268,23 @@ spec:
                   type: array
                 secret:
                   properties:
+                    annotations:
+                      additionalProperties:
+                        type: string
+                      description:
+                        Extra annotations for the Secret managed by this
+                        Token
+                      type: object
                     basicAuth:
                       description:
                         Create a secret with 'username' and 'password' fields
                         for HTTP Basic Auth rather than simply 'token'
                       type: boolean
+                    labels:
+                      additionalProperties:
+                        type: string
+                      description: Extra labels for the Secret managed by this Token
+                      type: object
                     name:
                       description:
                         Name for the Secret managed by this ClusterToken
@@ -369,8 +381,6 @@ spec:
                       type: string
                   required:
                     - basicAuth
-                    - name
-                    - namespace
                   type: object
               type: object
           type: object
@@ -383,7 +393,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: tokens.github.as-code.io
-  {{- with .Values.commonAnnotations | default dict }}
+  {{- with mergeOverwrite (default dict .Values.commonAnnotations) (ternary (dict "helm.sh/resource-policy" "keep") (dict) .Values.crds.keep) }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
@@ -648,15 +658,27 @@ spec:
                 secret:
                   description: Override the default token secret name and type
                   properties:
+                    annotations:
+                      additionalProperties:
+                        type: string
+                      description:
+                        Extra annotations for the Secret managed by this
+                        Token
+                      type: object
                     basicAuth:
                       description:
                         Create a secret with 'username' and 'password' fields
                         for HTTP Basic Auth rather than simply 'token'
                       type: boolean
+                    labels:
+                      additionalProperties:
+                        type: string
+                      description: Extra labels for the Secret managed by this Token
+                      type: object
                     name:
                       description:
-                        Name for the Secret managed by this ClusterToken
-                        (defaults to the name of the Token)
+                        Name for the Secret managed by this Token (defaults
+                        to the name of the Token)
                       maxLength: 253
                       type: string
                   type: object
@@ -743,8 +765,6 @@ spec:
                       type: string
                   required:
                     - basicAuth
-                    - name
-                    - namespace
                   type: object
               type: object
           type: object

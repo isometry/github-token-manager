@@ -18,8 +18,12 @@ namespace: ~
 ##   install: true | false
 ##     true: install the CRDs
 ##     false: do not install the CRDs
+##   keep: true | false
+##     true: prevent helm from deleting the CRDs when the chart is deleted
+##     false: allow helm to delete the CRDs when the chart is deleted
 crds:
   install: true
+  keep: true
 
 ## rbac
 ##   create: true | false
@@ -72,6 +76,9 @@ deployment:
       image:
         repository: ghcr.io/isometry/github-token-manager
         tag: latest
+      # additional environment variables to set on the controller container
+      # e.g. `[{name: VAULT_ADDR, value: http://vault:8200}]`
+      env: []
       resources:
         limits:
           cpu: 500m

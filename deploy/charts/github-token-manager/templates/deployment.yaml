@@ -4,7 +4,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "chart.fullname" . }}
-  {{- with mergeOverwrite (.Values.commonAnnotations | default dict) $deployment.annotations }}
+  {{- with mergeOverwrite (default dict .Values.commonAnnotations) (default dict $deployment.annotations) }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
@@ -77,6 +77,10 @@ spec:
             - --leader-elect
           command:
             - /ko-app/manager
+          {{- with $githubTokenManager.env }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           image: {{ $githubTokenManager.image.repository }}:{{ $githubTokenManager.image.tag }}
           livenessProbe:
             httpGet:

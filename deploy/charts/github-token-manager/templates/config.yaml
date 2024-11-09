@@ -4,7 +4,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: gtm-config
-  {{- with .Values.commonAnnotations | default dict }}
+  {{- with (default dict .Values.commonAnnotations) }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}
@@ -18,5 +18,11 @@ stringData:
     app_id: {{ .Values.config.app_id | int }}
     installation_id: {{ .Values.config.installation_id | int }}
     provider: "{{ .Values.config.provider }}"
+  {{- if ne .Values.config.provider "file" }}
     key: "{{ .Values.config.key }}"
+  {{- else }}
+    key: /config/private.key
+  private.key: |
+    {{- .Values.config.key | nindent 4 }}
+  {{- end }}
 {{- end }}

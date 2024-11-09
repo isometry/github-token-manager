@@ -368,8 +368,6 @@ spec:
                       type: string
                   required:
                     - basicAuth
-                    - name
-                    - namespace
                   type: object
               type: object
           type: object

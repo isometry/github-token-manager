@@ -4,7 +4,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "chart.fullname" . }}-metrics-service
-  {{- with .Values.commonAnnotations | default dict }}
+  {{- with (default dict .Values.commonAnnotations) }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ $value | quote }}

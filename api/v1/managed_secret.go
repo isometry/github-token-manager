@@ -9,9 +9,9 @@ type secretOwner interface {
 }
 
 type ManagedSecret struct {
-	Namespace string `json:"namespace"`
-	Name      string `json:"name"`
 	BasicAuth bool   `json:"basicAuth"`
+	Namespace string `json:"namespace,omitempty"`
+	Name      string `json:"name,omitempty"`
 }
 
 func (m ManagedSecret) IsUnset() bool {
