@@ -7,7 +7,7 @@ metadata:
   {{- with mergeOverwrite (default dict .Values.commonAnnotations) (default dict .Values.rbac.serviceAccount.annotations) }}
   annotations:
     {{- range $key, $value := . }}
-    {{ $key }}: {{ $value | quote }}
+    {{ $key }}: {{ tpl $value $ | quote }}
     {{- end }}
   {{- end }}
   labels:
@@ -21,7 +21,7 @@ metadata:
   {{- with (default dict .Values.commonAnnotations) }}
   annotations:
     {{- range $key, $value := . }}
-    {{ $key }}: {{ $value | quote }}
+    {{ $key }}: {{ tpl $value $ | quote }}
     {{- end }}
   {{- end }}
   labels:
@@ -67,7 +67,7 @@ metadata:
   {{- with (default dict .Values.commonAnnotations) }}
   annotations:
     {{- range $key, $value := . }}
-    {{ $key }}: {{ $value | quote }}
+    {{ $key }}: {{ tpl $value $ | quote }}
     {{- end }}
   {{- end }}
   labels:
@@ -89,7 +89,7 @@ metadata:
   {{- with (default dict .Values.commonAnnotations) }}
   annotations:
     {{- range $key, $value := . }}
-    {{ $key }}: {{ $value | quote }}
+    {{ $key }}: {{ tpl $value $ | quote }}
     {{- end }}
   {{- end }}
   labels:
@@ -175,7 +175,7 @@ metadata:
   {{- with (default dict .Values.commonAnnotations) }}
   annotations:
     {{- range $key, $value := . }}
-    {{ $key }}: {{ $value | quote }}
+    {{ $key }}: {{ tpl $value $ | quote }}
     {{- end }}
   {{- end }}
   labels:
@@ -194,7 +194,7 @@ metadata:
   {{- with (default dict .Values.commonAnnotations) }}
   annotations:
     {{- range $key, $value := . }}
-    {{ $key }}: {{ $value | quote }}
+    {{ $key }}: {{ tpl $value $ | quote }}
     {{- end }}
   {{- end }}
   labels:
@@ -221,7 +221,7 @@ metadata:
   {{- with (default dict .Values.commonAnnotations) }}
   annotations:
     {{- range $key, $value := . }}
-    {{ $key }}: {{ $value | quote }}
+    {{ $key }}: {{ tpl $value $ | quote }}
     {{- end }}
   {{- end }}
   labels:
@@ -243,7 +243,7 @@ metadata:
   {{- with (default dict .Values.commonAnnotations) }}
   annotations:
     {{- range $key, $value := . }}
-    {{ $key }}: {{ $value | quote }}
+    {{ $key }}: {{ tpl $value $ | quote }}
     {{- end }}
   {{- end }}
   labels:

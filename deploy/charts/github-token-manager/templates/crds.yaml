@@ -7,7 +7,7 @@ metadata:
   {{- with mergeOverwrite (default dict .Values.commonAnnotations) (ternary (dict "helm.sh/resource-policy" "keep") (dict) .Values.crds.keep) }}
   annotations:
     {{- range $key, $value := . }}
-    {{ $key }}: {{ $value | quote }}
+    {{ $key }}: {{ tpl $value $ | quote }}
     {{- end }}
   {{- end }}
   labels:
@@ -396,7 +396,7 @@ metadata:
   {{- with mergeOverwrite (default dict .Values.commonAnnotations) (ternary (dict "helm.sh/resource-policy" "keep") (dict) .Values.crds.keep) }}
   annotations:
     {{- range $key, $value := . }}
-    {{ $key }}: {{ $value | quote }}
+    {{ $key }}: {{ tpl $value $ | quote }}
     {{- end }}
   {{- end }}
   labels:
