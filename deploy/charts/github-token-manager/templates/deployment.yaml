@@ -1,21 +1,21 @@
 ---
-{{- $deployment := .Values.deployment }}
+{{- $manager := .Values.manager }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: {{ include "chart.fullname" . }}
-  {{- with mergeOverwrite (default dict .Values.commonAnnotations) (default dict $deployment.annotations) }}
+  {{- with mergeOverwrite (default dict .Values.commonAnnotations) (default dict $manager.annotations) }}
   annotations:
     {{- range $key, $value := . }}
     {{ $key }}: {{ tpl $value $ | quote }}
     {{- end }}
   {{- end }}
   labels:
-    component: deployment
+    component: manager
     {{- include "labels" . | nindent 4 }}
-    {{- with $deployment.extraLabels -}}{{ toYaml . | nindent 4 }}{{- end }}
+    {{- with $manager.extraLabels -}}{{ toYaml . | nindent 4 }}{{- end }}
 spec:
-  replicas: {{ $deployment.replicas }}
+  replicas: {{ $manager.replicas }}
   selector:
     matchLabels:
       {{- include "selectorLabels" . | nindent 6 }}
@@ -26,14 +26,6 @@ spec:
       labels:
         {{- include "selectorLabels" . | nindent 8 }}
     spec:
-      {{- with $deployment.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with $deployment.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -49,39 +41,21 @@ spec:
                     values:
                       - linux
       containers:
-        {{- $kubeRbacProxy := $deployment.containers.kubeRbacProxy }}
-        - args:
-            - --secure-listen-address=0.0.0.0:8443
-            - --upstream=http://127.0.0.1:8080/
-            - --v=0
-          image: {{ $kubeRbacProxy.image.repository }}:{{ $kubeRbacProxy.image.tag }}
-          name: kube-rbac-proxy
-          ports:
-            - name: https
-              containerPort: 8443
-              protocol: TCP
-          resources:
-            limits:
-              {{- $kubeRbacProxy.resources.limits | toYaml | nindent 14 }}
-            requests:
-              {{- $kubeRbacProxy.resources.requests | toYaml | nindent 14 }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-        {{- $githubTokenManager := $deployment.containers.githubTokenManager }}
         - args:
             - --health-probe-bind-address=:8081
             - --metrics-bind-address=127.0.0.1:8080
             - --leader-elect
           command:
             - /ko-app/manager
-          {{- with $githubTokenManager.env }}
+          {{- with $manager.env }}
           env:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: {{ $githubTokenManager.image.repository }}:{{ $githubTokenManager.image.tag }}
+          image: {{ if (hasPrefix "sha256:" (default "" $manager.tag)) -}}
+              {{- printf "%s@%s" $manager.repository $manager.tag -}}
+            {{- else -}}
+              {{- printf "%s:%s" $manager.repository (or $manager.tag $.Chart.AppVersion "latest") -}}
+            {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz
@@ -97,9 +71,9 @@ spec:
             periodSeconds: 10
           resources:
             limits:
-              {{- $githubTokenManager.resources.limits | toYaml | nindent 14 }}
+              {{- $manager.resources.limits | toYaml | nindent 14 }}
             requests:
-              {{- $githubTokenManager.resources.requests | toYaml | nindent 14 }}
+              {{- $manager.resources.requests | toYaml | nindent 14 }}
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -109,12 +83,20 @@ spec:
             - mountPath: /config
               name: config
               readOnly: true
+      {{- with $manager.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       securityContext:
         runAsNonRoot: true
         seccompProfile:
           type: RuntimeDefault
       serviceAccountName: {{ .Values.rbac.serviceAccount.name | default (include "chart.fullname" . ) }}
       terminationGracePeriodSeconds: 10
+      {{- with $manager.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       volumes:
         - name: config
           secret:

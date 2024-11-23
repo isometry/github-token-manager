@@ -53,47 +53,29 @@ metrics:
         protocol: TCP
         targetPort: https
 
-## deployment
+## manager
+##   repository: image repository
+##   tag: image tag
 ##   replicas: number of replicas
+##   annotations: map of annotations (optional)
 ##   tolerations: list of tolerations (optional)
 ##   nodeSelector: node selector (optional)
-##   containers: list of containers
-##     githubTokenManager:
-##       image:
-##         repository: image repository
-##         tag: image tag
-##     kubeRbacProxy:
-##       image:
-##         repository: image repository
-##         tag: image tag
-deployment:
-  annotations: {}
+##   env: list of additional environment variables to set on the manager container
+##   resources: manager container resource requests and limits
+manager:
+  repository: ghcr.io/isometry/github-token-manager
+  tag: ~ # defaults to chart appVersion
   replicas: 1
+  annotations: {}
   tolerations: ~
   nodeSelector: ~
-  containers:
-    githubTokenManager:
-      image:
-        repository: ghcr.io/isometry/github-token-manager
-        tag: latest
-      # additional environment variables to set on the controller container
-      # e.g. `[{name: VAULT_ADDR, value: http://vault:8200}]`
-      env: []
-      resources:
-        limits:
-          cpu: 500m
-          memory: 128Mi
-        requests:
-          cpu: 5m
-          memory: 64Mi
-    kubeRbacProxy:
-      image:
-        repository: gcr.io/kubebuilder/kube-rbac-proxy
-        tag: v0.16.0
-      resources:
-        limits:
-          cpu: 500m
-          memory: 128Mi
-        requests:
-          cpu: 5m
-          memory: 64Mi
+  # additional environment variables to set on the controller container
+  # e.g. `[{name: VAULT_ADDR, value: http://vault:8200}]`
+  env: []
+  resources:
+    limits:
+      cpu: 500m
+      memory: 128Mi
+    requests:
+      cpu: 5m
+      memory: 64Mi
