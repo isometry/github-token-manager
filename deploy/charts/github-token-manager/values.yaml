@@ -62,10 +62,6 @@ metrics:
 ##       image:
 ##         repository: image repository
 ##         tag: image tag
-##     kubeRbacProxy:
-##       image:
-##         repository: image repository
-##         tag: image tag
 deployment:
   annotations: {}
   replicas: 1
@@ -79,17 +75,6 @@ deployment:
       # additional environment variables to set on the controller container
       # e.g. `[{name: VAULT_ADDR, value: http://vault:8200}]`
       env: []
-      resources:
-        limits:
-          cpu: 500m
-          memory: 128Mi
-        requests:
-          cpu: 5m
-          memory: 64Mi
-    kubeRbacProxy:
-      image:
-        repository: gcr.io/kubebuilder/kube-rbac-proxy
-        tag: v0.16.0
       resources:
         limits:
           cpu: 500m

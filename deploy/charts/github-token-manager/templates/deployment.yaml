@@ -49,27 +49,6 @@ spec:
                     values:
                       - linux
       containers:
-        {{- $kubeRbacProxy := $deployment.containers.kubeRbacProxy }}
-        - args:
-            - --secure-listen-address=0.0.0.0:8443
-            - --upstream=http://127.0.0.1:8080/
-            - --v=0
-          image: {{ $kubeRbacProxy.image.repository }}:{{ $kubeRbacProxy.image.tag }}
-          name: kube-rbac-proxy
-          ports:
-            - name: https
-              containerPort: 8443
-              protocol: TCP
-          resources:
-            limits:
-              {{- $kubeRbacProxy.resources.limits | toYaml | nindent 14 }}
-            requests:
-              {{- $kubeRbacProxy.resources.requests | toYaml | nindent 14 }}
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
         {{- $githubTokenManager := $deployment.containers.githubTokenManager }}
         - args:
             - --health-probe-bind-address=:8081
