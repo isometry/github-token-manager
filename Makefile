@@ -189,7 +189,7 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 ko-build: ## Build the manager image using ko.
 	KO_DOCKER_REPO=$(IMAGE_TAG_BASE) \
 	ko build --bare --platform=$(PLATFORMS) --image-label org.opencontainers.image.source=$(IMAGE_SOURCE) --tags "latest,$(VERSION)" --push ./cmd/manager
-	
+
 
 ##@ Deployment
 
@@ -231,7 +231,7 @@ GOLANGCI_LINT = $(LOCALBIN)/golangci-lint
 ## Tool Versions
 KUSTOMIZE_VERSION ?= v5.5.0
 CONTROLLER_TOOLS_VERSION ?= v0.16.4
-ENVTEST_VERSION ?= release-0.18
+ENVTEST_VERSION ?= release-0.19
 GOLANGCI_LINT_VERSION ?= v1.59.1
 
 .PHONY: kustomize
