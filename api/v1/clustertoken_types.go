@@ -42,10 +42,17 @@ type ClusterTokenSpec struct {
 
 	// +optional
 	// +kubebuilder:validation:Format:=duration
-	// +kubebuilder:default:="10m"
+	// +kubebuilder:default:="30m"
 	// +kubebuilder:example:="45m"
 	// Specify how often to refresh the token (maximum: 1h)
 	RefreshInterval metav1.Duration `json:"refreshInterval"`
+
+	// +optional
+	// +kubebuilder:validation:Format:=duration
+	// +kubebuilder:default:="5m"
+	// +kubebuilder:example:="1m"
+	// Specify how long to wait before retrying on transient token retrieval error
+	RetryInterval metav1.Duration `json:"retryInterval"`
 
 	// +optional
 	// +kubebuilder:example:={"metadata": "read", "contents": "read"}
@@ -126,6 +133,10 @@ func (t *ClusterToken) GetInstallationID() int64 {
 
 func (t *ClusterToken) GetRefreshInterval() time.Duration {
 	return t.Spec.RefreshInterval.Duration
+}
+
+func (t *ClusterToken) GetRetryInterval() time.Duration {
+	return t.Spec.RetryInterval.Duration
 }
 
 func (t *ClusterToken) GetSecretNamespace() string {

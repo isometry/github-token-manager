@@ -118,6 +118,7 @@ func (in *ClusterTokenSpec) DeepCopyInto(out *ClusterTokenSpec) {
 	*out = *in
 	in.Secret.DeepCopyInto(&out.Secret)
 	out.RefreshInterval = in.RefreshInterval
+	out.RetryInterval = in.RetryInterval
 	if in.Permissions != nil {
 		in, out := &in.Permissions, &out.Permissions
 		*out = new(Permissions)
@@ -489,6 +490,7 @@ func (in *TokenSpec) DeepCopyInto(out *TokenSpec) {
 	*out = *in
 	in.Secret.DeepCopyInto(&out.Secret)
 	out.RefreshInterval = in.RefreshInterval
+	out.RetryInterval = in.RetryInterval
 	if in.Permissions != nil {
 		in, out := &in.Permissions, &out.Permissions
 		*out = new(Permissions)

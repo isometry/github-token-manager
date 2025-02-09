@@ -137,9 +137,15 @@ func (s *tokenSecret) Reconcile() (result reconcile.Result, err error) {
 	if apierrors.IsNotFound(err) {
 		// Secret not found, so create it
 		if err := s.CreateSecret(); err != nil {
-			log.Error(err, "failed to create secret")
+			if errors.Is(err, ghait.TransientError{}) {
+				log.Error(err, "transient error creating secret")
+				return reconcile.Result{RequeueAfter: s.owner.GetRetryInterval()}, nil
+			}
+
+			log.Error(err, "fatal error creating secret")
 			return result, err
 		}
+
 		return reconcile.Result{RequeueAfter: s.owner.GetRefreshInterval()}, nil
 	}
 
@@ -163,9 +169,15 @@ func (s *tokenSecret) Reconcile() (result reconcile.Result, err error) {
 	s.Secret = secret
 
 	if err := s.UpdateSecret(); err != nil {
-		log.Error(err, "failed to update secret")
+		if errors.Is(err, ghait.TransientError{}) {
+			log.Error(err, "transient error updating secret")
+			return reconcile.Result{RequeueAfter: s.owner.GetRetryInterval()}, nil
+		}
+
+		log.Error(err, "fatal error updating secret")
 		return result, err
 	}
+
 	return reconcile.Result{RequeueAfter: s.owner.GetRefreshInterval()}, nil
 }
 

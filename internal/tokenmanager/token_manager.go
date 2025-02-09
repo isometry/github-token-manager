@@ -23,6 +23,7 @@ type tokenManager interface {
 	GetSecretBasicAuth() bool
 	GetInstallationID() int64
 	GetRefreshInterval() time.Duration
+	GetRetryInterval() time.Duration
 	GetSecretNamespace() string
 	GetSecretName() string
 	GetSecretLabels() map[string]string
