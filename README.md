@@ -18,10 +18,19 @@ This operator functions similarly to cert-manager, but instead of managing certi
 
 * A Kubernetes cluster (v1.21+)
 * A [GitHub App](https://docs.github.com/en/apps/creating-github-apps) with permissions and repository assignments sufficient to meet the needs of all anticipated GitHub API interactions. Typically: `metadata: read`, `contents: read`, `statuses: write`.
+  * Specifically: App ID, App Installation ID and a Private Key are required.
 
-#### Example `gtm-config` secret
-<details>
-    <summary><i>expand me! ✨</i></summary>
+### Installation
+
+A Helm Chart is provided your for convenience: [deploy/charts/github-token-manager/](deploy/charts/github-token-manager/)
+
+Alternatively, a baseline Kustomization is provided under [config/default/](config/default/)
+
+### Configuration
+
+The operator itself requires configuration via `ConfigMap/gtm-config` in its deployment namespace. This contains the GitHub App ID, Installation ID and Private Key provider details. In addition to embedding the private key file within the secret, AWS Key Management Service (KMS), Google Cloud Key Management, and HashiCorp Vault's Transit Secrets Engine are also supported for secure external handling of keying material.
+
+#### Example `gtm-config` with embedded Private Key
 
 ```yaml
 apiVersion: v1
@@ -31,8 +40,8 @@ metadata:
   namespace: github-token-manager
 stringData:
   gtm.yaml: |
-    app_id: <app-id>
-    installation_id: <installation-id>
+    app_id: 1234
+    installation_id: 4567890
     provider: file
     key: /config/private.key
   private.key: |
@@ -41,11 +50,109 @@ stringData:
     -----END RSA PRIVATE KEY-----
 ```
 
-</details>
+#### Example `gtm-config` with AWS KMS
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gtm-config
+  namespace: github-token-manager
+stringData:
+  gtm.yaml: |
+    app_id: 1234
+    installation_id: 45678890
+    provider: aws
+    key: alias/github-token-manager
+```
+
+### `Token` and `ClusterToken`
+
+Once the operator is installed and configured, any number of namespaced `Token` and non-namespaced `ClusterToken` may be created, resulting in matching `Secret` resoures being created, containing either `token` or `username` and `password` fields, depending on configuration.
+
+The namespaced `Token` resource manages a `Secret` in the same namespace containing a fine-grained [installation access token](https://docs.github.com/en/rest/apps/apps?apiVersion=2022-11-28#create-an-installation-access-token-for-an-app) for the configured GitHub App, appropriate for delegated management by the namespace owner.
+
+The non-namespaced `ClusterToken` resource does the same thing, but supports abstracted management where only the managed `Secret` is bound to the configured target namespace via `.spec.secret.namespace`.
+
+```yaml
+apiVersion: github.as-code.io/v1
+kind: ClusterToken # or Token
+metadata:
+  name: foo
+spec:
+  installationID: 321  # (optional) override GitHub App Installation ID configured for the operator
+  permissions: {}      # (optional) map of token permissions, default: all permissions assigned to the GitHub App
+  refreshInterval: 45m # (optional) token refresh interval, default 30m
+  retryInterval: 1m    # (optional) token retry interval on ephemeral failure; default: 5m
+  repositories: []     # (optional) name-based override of repositories accessible with managed token
+  repositoryIDs: []    # (optional) ID-based override of reposotiories accessible with managed token
+  secret:              # (optional) override default `Secret` configuration
+    annotations: {}    # (optional) map of annotations for managed `Secret`
+    basicAuth: true    # (optional) create `Secret` with `username` and `password` rather than `token`
+    labels: {}         # (optional) map of labels for managed `Secret`
+    name: bar          # (optional) override name for managed `Secret` (default: .metadata.name)
+    namespace: default # (required, ClusterToken-only) set the target namespace for managed `Secret`
+```
+
+#### Examples
+
+Manage a `Secret/github-token` containing HTTP Basic Auth `username` and `password` fields appropriate for use with a Flux' `GitRepository` [Secret Reference](https://fluxcd.io/flux/components/source/gitrepositories/#secret-reference):
+
+```yaml
+apiVersion: github.as-code.io/v1
+kind: Token
+metadata:
+  name: github-token
+  namespace: flux-system
+spec:
+  permissions:
+    metadata: read
+    contents: read
+  refreshInterval: 45m
+  secret:
+    basicAuth: true
+```
+
+Manage a `Secret/github-status` containing a plain `token` field appropriate for use with a Flux' `Provider` [GitHub Commit Status Updates](https://fluxcd.io/flux/components/notification/providers/#github):
+
+```yaml
+apiVersion: github.as-code.io/v1
+kind: Token
+metadata:
+  name: github-status
+  namespace: flux-system
+spec:
+  permissions:
+    metadata: read
+    statuses: write
+  refreshInterval: 45m
+```
+
+Manage `Secret/github` in the `default` namespace containing a plain `token` field, inheriting all permissions assigned to the configured GitHub App:
+
+```yaml
+apiVersion: github.as-code.io/v1
+kind: ClusterToken
+metadata:
+  name: default-github
+spec:
+  secret:
+    name: github
+    namespace: default
+```
+
+## Contributing
+
+All contributions from the community are welcome.
+
+**NOTE:** Run `make help` for more information on all potential `make` targets
+
+More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ### To Deploy on the cluster
 
-**Build and push your image to the location specified by `IMG`:**
+
+#### Build and push your image to the location specified by `IMG`:
 
 ```sh
 make ko-build IMG=<some-registry>/github-token-manager:tag
@@ -55,13 +162,13 @@ make ko-build IMG=<some-registry>/github-token-manager:tag
 And it is required to have access to pull the image from the working environment. 
 Make sure you have the proper permission to the registry if the above commands don’t work.
 
-**Install the CRDs into the cluster:**
+#### Install the CRDs into the cluster:
 
 ```sh
 make install
 ```
 
-**Deploy the Manager to the cluster with the image specified by `IMG`:**
+#### Deploy the Manager to the cluster with the image specified by `IMG`:
 
 ```sh
 make deploy IMG=<some-registry>/github-token-manager:tag
@@ -70,42 +177,25 @@ make deploy IMG=<some-registry>/github-token-manager:tag
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin 
 privileges or be logged in as admin.
 
-**Create instances of your solution**
-You can apply the samples (examples) from the config/sample:
-
-```sh
-kubectl apply -k config/samples/
-```
-
->**NOTE**: Ensure that the samples has default values to test it out.
-
 ### To Uninstall
 
-**Delete the instances (CRs) from the cluster:**
+#### Delete the instances (CRs) from the cluster
 
 ```sh
 kubectl delete -k config/samples/
 ```
 
-**Delete the APIs(CRDs) from the cluster:**
+#### Delete the APIs(CRDs) from the cluster
 
 ```sh
 make uninstall
 ```
 
-**UnDeploy the controller from the cluster:**
+#### UnDeploy the controller from the cluster
 
 ```sh
 make undeploy
 ```
-
-## Contributing
-
-// TODO(user): Add detailed information on how you would like others to contribute to this project
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
 
 ## License
 

@@ -3,7 +3,7 @@ package tokenmanager
 import (
 	"time"
 
-	"github.com/google/go-github/v66/github"
+	"github.com/google/go-github/v69/github"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -23,6 +23,7 @@ type tokenManager interface {
 	GetSecretBasicAuth() bool
 	GetInstallationID() int64
 	GetRefreshInterval() time.Duration
+	GetRetryInterval() time.Duration
 	GetSecretNamespace() string
 	GetSecretName() string
 	GetSecretLabels() map[string]string

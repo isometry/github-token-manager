@@ -244,7 +244,7 @@ spec:
                       type: string
                   type: object
                 refreshInterval:
-                  default: 10m
+                  default: 30m
                   description: "Specify how often to refresh the token (maximum: 1h)"
                   example: 45m
                   format: duration
@@ -266,6 +266,14 @@ spec:
                     type: integer
                   maxItems: 500
                   type: array
+                retryInterval:
+                  default: 5m
+                  description:
+                    Specify how long to wait before retrying on transient
+                    token retrieval error
+                  example: 1m
+                  format: duration
+                  type: string
                 secret:
                   properties:
                     annotations:
@@ -633,7 +641,7 @@ spec:
                       type: string
                   type: object
                 refreshInterval:
-                  default: 10m
+                  default: 30m
                   description: "Specify how often to refresh the token (maximum: 1h)"
                   example: 45m
                   format: duration
@@ -655,6 +663,14 @@ spec:
                     type: integer
                   maxItems: 500
                   type: array
+                retryInterval:
+                  default: 5m
+                  description:
+                    Specify how long to wait before retrying on transient
+                    token retrieval error
+                  example: 1m
+                  format: duration
+                  type: string
                 secret:
                   description: Override the default token secret name and type
                   properties:
