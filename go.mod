@@ -8,7 +8,7 @@ require (
 	github.com/go-logr/logr v1.4.2
 	github.com/google/go-github/v70 v70.0.0
 	github.com/isometry/ghait v0.4.1
-	github.com/onsi/ginkgo/v2 v2.23.0
+	github.com/onsi/ginkgo/v2 v2.23.3
 	github.com/onsi/gomega v1.36.2
 	github.com/spf13/viper v1.20.0
 	k8s.io/api v0.32.3
@@ -66,7 +66,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.1.3 // indirect
-	github.com/google/cel-go v0.22.1 // indirect
+	github.com/google/cel-go v0.24.1 // indirect
 	github.com/google/gnostic-models v0.6.9 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-github/v69 v69.2.0 // indirect
@@ -151,10 +151,18 @@ require (
 	k8s.io/component-base v0.32.3 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20250318190949-c8a335a9a2ff // indirect
-	k8s.io/utils v0.0.0-20241210054802-24370beab758 // indirect
+	k8s.io/utils v0.0.0-20250321185631-1f6e0b77f77e // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.32.0 // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.6.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+// Workaround compatibility error with k8s.io/apiserver@v0.32.3:
+// # k8s.io/apiserver/pkg/cel/environment
+// ../../../go/pkg/mod/k8s.io/apiserver@v0.32.3/pkg/cel/environment/base.go:176:19:
+// cannot use ext.TwoVarComprehensions (value of type func(options ...ext.TwoVarComprehensionsOption)
+// "github.com/google/cel-go/cel".EnvOption) // as func() "github.com/google/cel-go/cel".EnvOption
+//  value in argument to UnversionedLib
+replace github.com/google/cel-go v0.24.1 => github.com/google/cel-go v0.22.1
