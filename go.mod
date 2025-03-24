@@ -9,7 +9,7 @@ require (
 	github.com/google/go-github/v70 v70.0.0
 	github.com/isometry/ghait v0.4.1
 	github.com/onsi/ginkgo/v2 v2.23.3
-	github.com/onsi/gomega v1.36.2
+	github.com/onsi/gomega v1.36.3
 	github.com/spf13/viper v1.20.0
 	k8s.io/api v0.32.3
 	k8s.io/apimachinery v0.32.3
