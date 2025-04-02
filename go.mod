@@ -2,15 +2,13 @@ module github.com/isometry/github-token-manager
 
 go 1.24
 
-toolchain go1.24.0
-
 require (
 	github.com/go-logr/logr v1.4.2
 	github.com/google/go-github/v70 v70.0.0
 	github.com/isometry/ghait v0.4.1
 	github.com/onsi/ginkgo/v2 v2.23.3
 	github.com/onsi/gomega v1.36.3
-	github.com/spf13/viper v1.20.0
+	github.com/spf13/viper v1.20.1
 	k8s.io/api v0.32.3
 	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v0.32.3
