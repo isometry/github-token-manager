@@ -260,7 +260,7 @@ func (s *tokenSecret) UpdateSecret() error {
 		return err
 	}
 
-	s.Secret.Data = s.SecretData(installationToken.GetToken())
+	s.Data = s.SecretData(installationToken.GetToken())
 
 	condition := metav1.Condition{
 		Type:    githubv1.ConditionTypeAvailable,

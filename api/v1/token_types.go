@@ -198,12 +198,12 @@ func (t *Token) SetStatusCondition(condition metav1.Condition) (changed bool) {
 	return meta.SetStatusCondition(&t.Status.Conditions, condition)
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // TokenList contains a list of Token
 type TokenList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata"`
 	Items           []Token `json:"items"`
 }
 

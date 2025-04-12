@@ -106,9 +106,9 @@ type ClusterTokenStatus struct {
 	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 }
 
-//+kubebuilder:object:root=true
-//+kubebuilder:subresource:status
-//+kubebuilder:resource:scope=Cluster
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:scope=Cluster
 
 // ClusterToken is the Schema for the clustertokens API
 type ClusterToken struct {
@@ -205,12 +205,12 @@ func (t *ClusterToken) SetStatusCondition(condition metav1.Condition) (changed b
 	return meta.SetStatusCondition(&t.Status.Conditions, condition)
 }
 
-//+kubebuilder:object:root=true
+// +kubebuilder:object:root=true
 
 // ClusterTokenList contains a list of ClusterToken
 type ClusterTokenList struct {
 	metav1.TypeMeta `json:",inline"`
-	metav1.ListMeta `json:"metadata,omitempty"`
+	metav1.ListMeta `json:"metadata"`
 	Items           []ClusterToken `json:"items"`
 }
 

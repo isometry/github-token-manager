@@ -46,10 +46,10 @@ func LoadConfig(ctx context.Context) (*OperatorConfig, error) {
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("GTM")
 
-	viper.BindEnv("app_id", "GTM_APP_ID", "GITHUB_APP_ID")
-	viper.BindEnv("installation_id", "GTM_INSTALLATION_ID", "GITHUB_INSTALLATION_ID")
-	viper.BindEnv("provider", "GTM_PROVIDER", "KMS_PROVIDER")
-	viper.BindEnv("key", "GTM_KEY", "KMS_KEY", "GITHUB_PRIVATE_KEY")
+	_ = viper.BindEnv("app_id", "GTM_APP_ID", "GITHUB_APP_ID")
+	_ = viper.BindEnv("installation_id", "GTM_INSTALLATION_ID", "GITHUB_INSTALLATION_ID")
+	_ = viper.BindEnv("provider", "GTM_PROVIDER", "KMS_PROVIDER")
+	_ = viper.BindEnv("key", "GTM_KEY", "KMS_KEY", "GITHUB_PRIVATE_KEY")
 
 	viper.SetDefault("provider", "file")
 
