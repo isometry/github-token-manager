@@ -35,6 +35,9 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
+	// Automatically set GOMAXPROCS to match Linux container CPU quota
+	_ "go.uber.org/automaxprocs"
+
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
 	"github.com/isometry/github-token-manager/internal/controller"
 	//+kubebuilder:scaffold:imports
