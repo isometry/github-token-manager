@@ -1,6 +1,7 @@
 module github.com/isometry/github-token-manager
 
 go 1.24
+toolchain go1.24.1
 
 require (
 	github.com/go-logr/logr v1.4.2
@@ -11,7 +12,7 @@ require (
 	github.com/spf13/viper v1.20.1
 	go.uber.org/automaxprocs v1.6.0
 	k8s.io/api v0.32.3
-	k8s.io/apimachinery v0.32.3
+	k8s.io/apimachinery v0.33.0
 	k8s.io/client-go v0.32.3
 	sigs.k8s.io/controller-runtime v0.20.4
 )
@@ -70,7 +71,6 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-github/v69 v69.2.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
-	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20250403155104-27863c87afa6 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
