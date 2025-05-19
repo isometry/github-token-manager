@@ -12,9 +12,9 @@ require (
 	github.com/onsi/gomega v1.37.0
 	github.com/spf13/viper v1.20.1
 	go.uber.org/automaxprocs v1.6.0
-	k8s.io/api v0.33.0
-	k8s.io/apimachinery v0.33.0
-	k8s.io/client-go v0.33.0
+	k8s.io/api v0.33.1
+	k8s.io/apimachinery v0.33.1
+	k8s.io/client-go v0.33.1
 	sigs.k8s.io/controller-runtime v0.20.4
 )
 
