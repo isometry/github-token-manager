@@ -5,7 +5,7 @@ go 1.24.0
 toolchain go1.24.2
 
 require (
-	github.com/go-logr/logr v1.4.2
+	github.com/go-logr/logr v1.4.3
 	github.com/google/go-github/v71 v71.0.0
 	github.com/isometry/ghait v0.4.3
 	github.com/onsi/ginkgo/v2 v2.23.4
