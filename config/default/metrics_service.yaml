@@ -15,3 +15,4 @@ spec:
       targetPort: 8443
   selector:
     control-plane: manager
+    app.kubernetes.io/name: github-token-manager

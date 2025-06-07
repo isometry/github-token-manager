@@ -123,6 +123,7 @@ func ignoreTokenStatusUpdatePredicate() predicate.Predicate {
 func (r *TokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&githubv1.Token{}).
+		Named("github-token").
 		// Owns(&corev1.Secret{}).
 		WithEventFilter(ignoreTokenStatusUpdatePredicate()).
 		// WithEventFilter(ignoreManagedSecretsPredicate()).

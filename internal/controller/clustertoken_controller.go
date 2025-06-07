@@ -112,6 +112,7 @@ func ignoreClusterTokenStatusUpdatePredicate() predicate.Predicate {
 func (r *ClusterTokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&githubv1.ClusterToken{}).
+		Named("github-clustertoken").
 		WithEventFilter(ignoreClusterTokenStatusUpdatePredicate()).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}). // default
 		Complete(r)

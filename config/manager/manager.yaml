@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   labels:
     control-plane: manager
-    app.kubernetes.io/name: namespace
+    app.kubernetes.io/name: github-token-manager
     app.kubernetes.io/instance: system
     app.kubernetes.io/component: manager
     app.kubernetes.io/created-by: github-token-manager
@@ -18,7 +18,7 @@ metadata:
   namespace: system
   labels:
     control-plane: manager
-    app.kubernetes.io/name: deployment
+    app.kubernetes.io/name: github-token-manager
     app.kubernetes.io/instance: manager
     app.kubernetes.io/component: manager
     app.kubernetes.io/created-by: github-token-manager
@@ -55,13 +55,14 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - command:
+        - name: manager
+          image: controller:latest
+          command:
             - /ko-app/manager
           args:
             - --leader-elect
             - --health-probe-bind-address=:8081
-          image: controller:latest
-          name: manager
+          ports: []
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
