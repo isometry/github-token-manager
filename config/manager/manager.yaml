@@ -57,8 +57,6 @@ spec:
       containers:
         - name: manager
           image: controller:latest
-          command:
-            - /ko-app/manager
           args:
             - --leader-elect
             - --health-probe-bind-address=:8081
