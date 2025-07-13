@@ -41,7 +41,7 @@ func (c *OperatorConfig) GetKey() string {
 const TokenValidity = time.Hour
 
 func LoadConfig(ctx context.Context) (*OperatorConfig, error) {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	viper.AutomaticEnv()
 	viper.SetEnvPrefix("GTM")
@@ -60,7 +60,7 @@ func LoadConfig(ctx context.Context) (*OperatorConfig, error) {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			return nil, fmt.Errorf("error reading configuration file: %w", err)
 		} else {
-			log.Info("no configuration file found, continuing with environment variables only")
+			logger.Info("no configuration file found, continuing with environment variables only")
 		}
 	}
 

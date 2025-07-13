@@ -43,9 +43,9 @@ func WithReconciler(reconciler tokenReconciler) Option {
 	}
 }
 
-func WithGHApp(ghait ghait.GHAIT) Option {
+func WithGHApp(g ghait.GHAIT) Option {
 	return func(s *tokenSecret) {
-		s.ghait = ghait
+		s.ghait = g
 	}
 }
 

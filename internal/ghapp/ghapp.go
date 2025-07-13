@@ -9,14 +9,14 @@ import (
 )
 
 func NewGHApp(ctx context.Context) (ghait.GHAIT, error) {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	cfg, err := LoadConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("configuration: %w", err)
 	}
 
-	log.Info("loaded configuration", "config", cfg)
+	logger.Info("loaded configuration", "config", cfg)
 
 	ghapp, err := ghait.NewGHAIT(ctx, cfg)
 	if err != nil {
