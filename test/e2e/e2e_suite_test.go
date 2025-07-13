@@ -1,3 +1,6 @@
+//go:build e2e
+// +build e2e
+
 /*
 Copyright 2024 Robin Breathe.
 
@@ -27,6 +30,6 @@ import (
 // Run e2e tests using the Ginkgo runner.
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	fmt.Fprintf(GinkgoWriter, "Starting github-token-manager suite\n")
+	_, _ = fmt.Fprintf(GinkgoWriter, "Starting github-token-manager suite\n")
 	RunSpecs(t, "e2e suite")
 }

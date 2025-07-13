@@ -8,6 +8,9 @@
 bin/*
 Dockerfile.cross
 
+# Secrets
+test/e2e/values.yaml
+
 # Test binary, built with `go test -c`
 *.test
 

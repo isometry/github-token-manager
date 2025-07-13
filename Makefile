@@ -150,8 +150,8 @@ cleanup-test-e2e:
 
 # Utilize Kind or modify the e2e tests to load the image locally, enabling compatibility with other vendors.
 .PHONY: test-e2e
-test-e2e: setup-test-e2e manifests generate fmt vet ## Run the e2e tests. Expected an isolated environment using Kind.
-	KIND_CLUSTER=$(KIND_CLUSTER) go test ./test/e2e/ -v -ginkgo.v
+test-e2e: fmt vet setup-test-e2e ## Run the e2e tests. Expected an isolated environment using Kind.
+	KUBE_CONTEXT=kind-$(KIND_CLUSTER) go test ./test/e2e/ -tags=e2e -v -ginkgo.v
 	$(MAKE) cleanup-test-e2e
 
 .PHONY: lint
@@ -213,7 +213,7 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 .PHONY: ko-build
 ko-build: ## Build the manager image using ko.
 	KO_DOCKER_REPO=$(IMAGE_TAG_BASE) \
-	ko build --bare --platform=$(PLATFORMS) --image-label org.opencontainers.image.source=$(IMAGE_SOURCE) --tags "latest,$(VERSION)" --push ./cmd/manager
+	$(KO) build --bare --platform=$(PLATFORMS) --image-label org.opencontainers.image.source=$(IMAGE_SOURCE) --tags "latest,$(VERSION)" --push ./cmd/manager
 
 
 ##@ Deployment
@@ -249,6 +249,7 @@ $(LOCALBIN):
 ## Tool Binaries
 KUBECTL ?= kubectl
 KIND ?= kind
+KO ?= ko
 KUSTOMIZE ?= $(LOCALBIN)/kustomize
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 ENVTEST ?= $(LOCALBIN)/setup-envtest
