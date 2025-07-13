@@ -1,6 +1,6 @@
 package v1
 
 const (
-	// ConditionTypeAvailable represents the status of the Secret reconciliation
-	ConditionTypeAvailable = "Available"
+	// ConditionTypeReady is used to signal whether a reconciliation has completed successfully.
+	ConditionTypeReady = "Ready"
 )
