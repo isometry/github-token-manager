@@ -1,4 +1,5 @@
 [![CodeQL](https://github.com/isometry/github-token-manager/actions/workflows/codeql.yaml/badge.svg)](https://github.com/isometry/github-token-manager/actions/workflows/codeql.yaml)
+[![E2E](https://github.com/isometry/github-token-manager/actions/workflows/e2e.yaml/badge.svg)](https://github.com/isometry/github-token-manager/actions/workflows/e2e.yaml)
 [![Publish](https://github.com/isometry/github-token-manager/actions/workflows/publish.yaml/badge.svg)](https://github.com/isometry/github-token-manager/actions/workflows/publish.yaml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/isometry/github-token-manager)](https://goreportcard.com/report/github.com/isometry/github-token-manager)
 
@@ -158,8 +159,8 @@ More information can be found via the [Kubebuilder Documentation](https://book.k
 make ko-build IMG=<some-registry>/github-token-manager:tag
 ```
 
-**NOTE:** This image ought to be published in the personal registry you specified. 
-And it is required to have access to pull the image from the working environment. 
+**NOTE:** This image ought to be published in the personal registry you specified.
+And it is required to have access to pull the image from the working environment.
 Make sure you have the proper permission to the registry if the above commands don’t work.
 
 #### Install the CRDs into the cluster:
@@ -174,7 +175,7 @@ make install
 make deploy IMG=<some-registry>/github-token-manager:tag
 ```
 
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin 
+> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
 privileges or be logged in as admin.
 
 ### To Uninstall

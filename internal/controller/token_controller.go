@@ -55,12 +55,12 @@ type TokenReconciler struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.3/pkg/reconcile
 func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
-	log := log.FromContext(ctx)
+	logger := log.FromContext(ctx)
 
 	if app == nil {
 		app, err = ghapp.NewGHApp(ctx)
 		if err != nil {
-			log.Error(err, "failed to load GitHub App credentials")
+			logger.Error(err, "failed to load GitHub App credentials")
 			return ctrl.Result{RequeueAfter: time.Minute}, err
 		}
 	}
@@ -69,26 +69,26 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 	options := []tm.Option{
 		tm.WithReconciler(r),
 		tm.WithGHApp(app),
-		tm.WithLogger(log),
+		tm.WithLogger(logger),
 	}
 
 	tokenSecret, err := tm.NewTokenSecret(ctx, req.NamespacedName, token, options...)
 	if err != nil {
-		log.Error(err, "failed to create Token reconciler")
+		logger.Error(err, "failed to create Token reconciler")
 		return ctrl.Result{}, err
 	}
 
 	if tokenSecret == nil {
-		log.Info("Token not found, skipping reconciliation")
+		logger.Info("Token not found, skipping reconciliation")
 		return ctrl.Result{}, nil
 	}
 
 	result, err = tokenSecret.Reconcile()
 	if err != nil {
-		log.Error(err, "failed to reconcile Token")
+		logger.Error(err, "failed to reconcile Token")
 		return result, err
 	}
-	log.Info("reconciled", "requeueAfter", result.RequeueAfter)
+	logger.Info("reconciled", "requeueAfter", result.RequeueAfter)
 	return result, nil
 }
 

@@ -43,9 +43,9 @@ func WithReconciler(reconciler tokenReconciler) Option {
 	}
 }
 
-func WithGHApp(ghait ghait.GHAIT) Option {
+func WithGHApp(g ghait.GHAIT) Option {
 	return func(s *tokenSecret) {
-		s.ghait = ghait
+		s.ghait = g
 	}
 }
 
@@ -83,7 +83,7 @@ func NewTokenSecret(ctx context.Context, key types.NamespacedName, owner tokenMa
 		s.log.Info("initializing token status conditions")
 
 		condition := metav1.Condition{
-			Type:    githubv1.ConditionTypeAvailable,
+			Type:    githubv1.ConditionTypeReady,
 			Status:  metav1.ConditionUnknown,
 			Reason:  "Reconciling",
 			Message: "Starting reconciliation",
@@ -152,7 +152,7 @@ func (s *tokenSecret) Reconcile() (result reconcile.Result, err error) {
 	// Secret was found, so update it
 	if !metav1.IsControlledBy(secret, s.owner) {
 		condition := metav1.Condition{
-			Type:    githubv1.ConditionTypeAvailable,
+			Type:    githubv1.ConditionTypeReady,
 			Status:  metav1.ConditionFalse,
 			Reason:  "Failed",
 			Message: "Secret already exists",
@@ -217,7 +217,7 @@ func (s *tokenSecret) CreateSecret() error {
 	}
 
 	condition := metav1.Condition{
-		Type:    githubv1.ConditionTypeAvailable,
+		Type:    githubv1.ConditionTypeReady,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Creating",
 		Message: "Creating Secret",
@@ -263,7 +263,7 @@ func (s *tokenSecret) UpdateSecret() error {
 	s.Data = s.SecretData(installationToken.GetToken())
 
 	condition := metav1.Condition{
-		Type:    githubv1.ConditionTypeAvailable,
+		Type:    githubv1.ConditionTypeReady,
 		Status:  metav1.ConditionUnknown,
 		Reason:  "Updating",
 		Message: "Updating Secret",
@@ -300,7 +300,7 @@ func (s *tokenSecret) DeleteSecret(key types.NamespacedName) error {
 	log := s.log.WithValues("func", "DeleteSecret")
 
 	condition := metav1.Condition{
-		Type:    githubv1.ConditionTypeAvailable,
+		Type:    githubv1.ConditionTypeReady,
 		Status:  metav1.ConditionFalse,
 		Reason:  "Reconciling",
 		Message: "Deleting old Secret",
