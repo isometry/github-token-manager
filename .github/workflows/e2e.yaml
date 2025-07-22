@@ -1,0 +1,45 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+
+    env:
+      KIND_CLUSTER: e2e
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup go
+        uses: actions/setup-go@v5
+
+      - name: Setup ko
+        uses: ko-build/setup-ko@v0.9
+
+      - name: Setup helm
+        uses: azure/setup-helm@v4
+
+      - name: Setup kind
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: ${{ env.KIND_CLUSTER }}
+
+      - name: Run E2E tests
+        env:
+          GTM_APP_ID: ${{ vars.GTM_APP_ID }}
+          GTM_INSTALLATION_ID: ${{ vars.GTM_INSTALLATION_ID }}
+          GTM_PROVIDER: file
+          GTM_KEY: ${{ secrets.GTM_KEY }}
+        run: |
+          make test-e2e
