@@ -7,7 +7,7 @@ require (
 	github.com/google/go-github/v73 v73.0.0
 	github.com/isometry/ghait v0.4.6
 	github.com/onsi/ginkgo/v2 v2.23.4
-	github.com/onsi/gomega v1.37.0
+	github.com/onsi/gomega v1.38.0
 	github.com/spf13/viper v1.20.1
 	go.uber.org/automaxprocs v1.6.0
 	golang.org/x/oauth2 v0.30.0
