@@ -22,7 +22,9 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Setup go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
 
       - name: Setup ko
         uses: ko-build/setup-ko@v0.9
