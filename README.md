@@ -9,31 +9,58 @@ Kubernetes operator to manage fine-grained, ephemeral Access Tokens generated fr
 
 ## Description
 
-A number of Kubernetes operators, including [FluxCD](https://fluxcd.io/) and [upbound/provider-terraform](https://github.com/upbound/provider-terraform), often need to authenticate with the GitHub API, particularly when private repositories are used. This may be to clone a private repository, pull from a private GHCR repository, or to send a commit or deployment status. Common practice is to use Personal Access Tokens (PATs), but their use is far from optimal: PATs tending to be long-lived, poorly scoped, and tied to an individual, as GitHub has no official support for service accounts.
+Kubernetes operators like [FluxCD](https://fluxcd.io/) and [crossplane-contrib/provider-terraform](https://github.com/crossplane-contrib/provider-terraform) need GitHub API access for private repositories, container registry pulls, and status updates. The traditional approaches have critical flaws: Personal Access Tokens (PATs) are long-lived, over-privileged, and tied to individuals, while storing GitHub App private keys in-cluster creates massive security risks.
 
-This operator functions similarly to cert-manager, but instead of managing certificates, it manages GitHub App Installation Access Tokens. It takes custom-scoped `Token` (namespaced) and `ClusterToken` requests and transforms them into `Secrets`. These `Secrets` contain regularly refreshed GitHub App Installation Access Token credentials. These credentials are ready for use with GitHub clients that rely on HTTP Basic Auth, providing a more secure and automated solution for token management.
+This operator solves the problem by functioning like cert-manager for GitHub tokens. It automatically generates ephemeral, fine-grained access tokens from GitHub App credentials stored securely in cloud Key Management Services, never exposing private keys in your cluster.
+
+## Features
+
+- **🔐 Zero-Trust Security**: Never store GitHub App private keys in-cluster - integrates with AWS KMS, Google Cloud KMS, and HashiCorp Vault
+- **⏰ Ephemeral & Auto-Rotating**: Tokens expire in 1 hour and refresh automatically before expiration
+- **🎯 Fine-Grained Permissions**: Each token can have different scopes, down to specific repositories and permissions
+- **🏢 Multi-Tenancy**: Namespace isolation with `Token` CRD, cluster-wide control with `ClusterToken`
+- **🚀 GitOps-Ready**: Native FluxCD integration with HTTP Basic Auth secret generation
+- **📊 Production-Ready**: Prometheus metrics, health probes, intelligent retry logic with exponential backoff
 
 ## Getting Started
 
 ### Prerequisites
 
-* A Kubernetes cluster (v1.21+)
-* A [GitHub App](https://docs.github.com/en/apps/creating-github-apps) with permissions and repository assignments sufficient to meet the needs of all anticipated GitHub API interactions. Typically: `metadata: read`, `contents: read`, `statuses: write`.
-  * Specifically: App ID, App Installation ID and a Private Key are required.
+- Kubernetes cluster (v1.30+)
+- [GitHub App](https://docs.github.com/en/apps/creating-github-apps) with required permissions (typically: `metadata: read`, `contents: read`, `statuses: write`)
+- GitHub App ID and Installation ID, with private key stored in AWS KMS, Google Cloud KMS, or HashiCorp Vault
 
 ### Installation
 
-A Helm Chart is provided your for convenience: [deploy/charts/github-token-manager/](deploy/charts/github-token-manager/)
+```bash
+# Helm (recommended)
+helm install oci://ghcr.io/isometry/charts/github-token-manager ./deploy/charts/github-token-manager
 
-Alternatively, a baseline Kustomization is provided under [config/default/](config/default/)
+# Or Kustomize
+kustomize build config/default | kubectl apply -f -
+```
 
 ### Configuration
 
-The operator itself requires configuration via `ConfigMap/gtm-config` in its deployment namespace. This contains the GitHub App ID, Installation ID and Private Key provider details. In addition to embedding the private key file within the secret, AWS Key Management Service (KMS), Google Cloud Key Management, and HashiCorp Vault's Transit Secrets Engine are also supported for secure external handling of keying material.
-
-#### Example `gtm-config` with embedded Private Key
+Configure via `Secret/gtm-config` with your GitHub App details and secure key storage:
 
 ```yaml
+# AWS KMS (recommended)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gtm-config
+  namespace: github-token-manager
+stringData:
+  gtm.yaml: |
+    app_id: 1234
+    installation_id: 4567890
+    provider: aws
+    key: alias/github-token-manager
+```
+
+```yaml
+# File-based (for development/testing)
 apiVersion: v1
 kind: Secret
 metadata:
@@ -47,33 +74,31 @@ stringData:
     key: /config/private.key
   private.key: |
     -----BEGIN RSA PRIVATE KEY-----
-    ...elided...
+    ...your GitHub App private key...
     -----END RSA PRIVATE KEY-----
 ```
 
-#### Example `gtm-config` with AWS KMS
+**Cloud KMS Permissions Required:**
 
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: gtm-config
-  namespace: github-token-manager
-stringData:
-  gtm.yaml: |
-    app_id: 1234
-    installation_id: 45678890
-    provider: aws
-    key: alias/github-token-manager
-```
+- **AWS KMS**: IAM permissions `kms:DescribeKey` and `kms:Sign` on the KMS key
+- **GCP KMS**: Permission `cloudkms.cryptoKeyVersions.useToSign` or role `roles/cloudkms.cryptoKeyVersionsSigner`
+- **Vault**: Policy with `write` capability on transit sign path (e.g., `transit/sign/<keyName>`)
 
-### `Token` and `ClusterToken`
+**Pod Authentication:**
 
-Once the operator is installed and configured, any number of namespaced `Token` and non-namespaced `ClusterToken` may be created, resulting in matching `Secret` resoures being created, containing either `token` or `username` and `password` fields, depending on configuration.
+- **AWS**: IRSA, Pod Identity, or instance profile with above KMS permissions
+- **GCP**: Workload Identity or service account with Cloud KMS access
+- **Vault**: Kubernetes auth method configured with appropriate transit policy
 
-The namespaced `Token` resource manages a `Secret` in the same namespace containing a fine-grained [installation access token](https://docs.github.com/en/rest/apps/apps?apiVersion=2022-11-28#create-an-installation-access-token-for-an-app) for the configured GitHub App, appropriate for delegated management by the namespace owner.
+Supported providers: `aws` (KMS), `gcp` (Cloud KMS), `vault` (Transit Engine), `file` (embedded)
 
-The non-namespaced `ClusterToken` resource does the same thing, but supports abstracted management where only the managed `Secret` is bound to the configured target namespace via `.spec.secret.namespace`.
+### Token Resources
+
+Create `Token` (namespaced) or `ClusterToken` (cluster-scoped) resources to generate secure `Secret` objects:
+
+- **Token**: Namespace-isolated, delegated management
+- **ClusterToken**: Centralized control with target namespace specification
+- **Secrets**: Contain `token` field or `username`/`password` for HTTP Basic Auth
 
 ```yaml
 apiVersion: github.as-code.io/v1
@@ -95,9 +120,9 @@ spec:
     namespace: default # (required, ClusterToken-only) set the target namespace for managed `Secret`
 ```
 
-#### Examples
+### Examples
 
-Manage a `Secret/github-token` containing HTTP Basic Auth `username` and `password` fields appropriate for use with a Flux' `GitRepository` [Secret Reference](https://fluxcd.io/flux/components/source/gitrepositories/#secret-reference):
+**FluxCD Git Repository Access:**
 
 ```yaml
 apiVersion: github.as-code.io/v1
@@ -109,12 +134,11 @@ spec:
   permissions:
     metadata: read
     contents: read
-  refreshInterval: 45m
   secret:
-    basicAuth: true
+    basicAuth: true # Creates username/password for Git
 ```
 
-Manage a `Secret/github-status` containing a plain `token` field appropriate for use with a Flux' `Provider` [GitHub Commit Status Updates](https://fluxcd.io/flux/components/notification/providers/#github):
+**GitHub API Status Updates:**
 
 ```yaml
 apiVersion: github.as-code.io/v1
@@ -126,77 +150,27 @@ spec:
   permissions:
     metadata: read
     statuses: write
-  refreshInterval: 45m
 ```
 
-Manage `Secret/github` in the `default` namespace containing a plain `token` field, inheriting all permissions assigned to the configured GitHub App:
+## Development
 
-```yaml
-apiVersion: github.as-code.io/v1
-kind: ClusterToken
-metadata:
-  name: default-github
-spec:
-  secret:
-    name: github
-    namespace: default
+```bash
+# Build and test
+make build test lint
+
+# Deploy locally
+make ko-build IMG=<registry>/github-token-manager:tag
+make deploy IMG=<registry>/github-token-manager:tag
+
+# Clean up
+make undeploy uninstall
 ```
+
+Run `make help` for all available targets. See [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html) for details.
 
 ## Contributing
 
-All contributions from the community are welcome.
-
-**NOTE:** Run `make help` for more information on all potential `make` targets
-
-More information can be found via the [Kubebuilder Documentation](https://book.kubebuilder.io/introduction.html)
-
-### To Deploy on the cluster
-
-
-#### Build and push your image to the location specified by `IMG`:
-
-```sh
-make ko-build IMG=<some-registry>/github-token-manager:tag
-```
-
-**NOTE:** This image ought to be published in the personal registry you specified.
-And it is required to have access to pull the image from the working environment.
-Make sure you have the proper permission to the registry if the above commands don’t work.
-
-#### Install the CRDs into the cluster:
-
-```sh
-make install
-```
-
-#### Deploy the Manager to the cluster with the image specified by `IMG`:
-
-```sh
-make deploy IMG=<some-registry>/github-token-manager:tag
-```
-
-> **NOTE**: If you encounter RBAC errors, you may need to grant yourself cluster-admin
-privileges or be logged in as admin.
-
-### To Uninstall
-
-#### Delete the instances (CRs) from the cluster
-
-```sh
-kubectl delete -k config/samples/
-```
-
-#### Delete the APIs(CRDs) from the cluster
-
-```sh
-make uninstall
-```
-
-#### UnDeploy the controller from the cluster
-
-```sh
-make undeploy
-```
+Contributions are welcome! Please submit pull requests via GitHub. For major changes, please open an issue first to discuss your proposed changes.
 
 ## License
 
