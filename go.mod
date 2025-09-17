@@ -6,8 +6,8 @@ require (
 	github.com/go-logr/logr v1.4.3
 	github.com/google/go-github/v74 v74.0.0
 	github.com/isometry/ghait v0.6.0
-	github.com/onsi/ginkgo/v2 v2.25.0
-	github.com/onsi/gomega v1.38.0
+	github.com/onsi/ginkgo/v2 v2.25.3
+	github.com/onsi/gomega v1.38.2
 	github.com/spf13/viper v1.21.0
 	golang.org/x/oauth2 v0.31.0
 	k8s.io/api v0.34.1
