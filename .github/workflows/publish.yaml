@@ -21,7 +21,8 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v6
         with:
-          go-version: stable
+          go-version-file: "go.mod"
+          cache: true
 
       - name: Setup Ko
         uses: ko-build/setup-ko@v0.9
