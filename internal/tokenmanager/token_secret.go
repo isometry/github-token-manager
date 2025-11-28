@@ -3,10 +3,11 @@ package tokenmanager
 import (
 	"context"
 	"errors"
+	"maps"
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/google/go-github/v76/github"
+	"github.com/google/go-github/v79/github"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -401,9 +402,7 @@ func (s *tokenSecret) SecretLabels() map[string]string {
 		"app.kubernetes.io/part-of":    "github-token-manager",
 		"app.kubernetes.io/created-by": "github-token-manager",
 	}
-	for k, v := range s.owner.GetSecretLabels() {
-		secretLabels[k] = v
-	}
+	maps.Copy(secretLabels, s.owner.GetSecretLabels())
 	return secretLabels
 }
 
