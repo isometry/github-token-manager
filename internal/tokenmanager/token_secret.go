@@ -12,6 +12,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -368,21 +369,24 @@ func (s *tokenSecret) withUpdateManagedSecret() tokenStatusOptions {
 func (s *tokenSecret) UpdateTokenStatus(options ...tokenStatusOptions) error {
 	log := s.log.WithValues("func", "UpdateTokenStatus")
 
-	if err := s.RefreshOwner(); err != nil {
-		log.Error(err, "failed to refresh token prior to status update")
-		return err
-	}
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		if err := s.RefreshOwner(); err != nil {
+			return err
+		}
 
-	var changed bool
-	for _, option := range options {
-		changed = option() || changed
-	}
+		var changed bool
+		for _, option := range options {
+			changed = option() || changed
+		}
 
-	if !changed {
-		return nil
-	}
+		if !changed {
+			return nil
+		}
 
-	if err := s.reconciler.Status().Update(s.ctx, s.owner); err != nil {
+		return s.reconciler.Status().Update(s.ctx, s.owner)
+	})
+
+	if err != nil {
 		log.Error(err, "failed to update token status")
 		return err
 	}
