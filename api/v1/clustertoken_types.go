@@ -19,7 +19,7 @@ package v1
 import (
 	"time"
 
-	"github.com/google/go-github/v79/github"
+	"github.com/google/go-github/v80/github"
 	"github.com/isometry/github-token-manager/internal/ghapp"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
