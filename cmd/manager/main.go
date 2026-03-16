@@ -17,6 +17,7 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
 	"os"
@@ -39,6 +40,7 @@ import (
 
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
 	"github.com/isometry/github-token-manager/internal/controller"
+	"github.com/isometry/github-token-manager/internal/metrics"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -86,6 +88,8 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	ctx := ctrl.SetupSignalHandler()
 
 	if disableHTTP2 {
 		forceHTTP11 := func(c *tls.Config) {
@@ -191,8 +195,20 @@ func main() {
 		os.Exit(1)
 	}
 
+	metricsRecorder, err := metrics.Setup()
+	if err != nil {
+		setupLog.Error(err, "unable to set up metrics")
+		os.Exit(1)
+	}
+	defer func() {
+		if err := metricsRecorder.Shutdown(context.Background()); err != nil {
+			setupLog.Error(err, "shutting down meter provider")
+		}
+	}()
+
 	if err = (&controller.TokenReconciler{
-		Client: mgr.GetClient(),
+		Client:  mgr.GetClient(),
+		Metrics: metricsRecorder,
 		// Scheme: mgr.GetScheme(),
 		// Recorder: mgr.GetEventRecorderFor("token-controller"),
 	}).SetupWithManager(mgr); err != nil {
@@ -200,7 +216,8 @@ func main() {
 		os.Exit(1)
 	}
 	if err = (&controller.ClusterTokenReconciler{
-		Client: mgr.GetClient(),
+		Client:  mgr.GetClient(),
+		Metrics: metricsRecorder,
 		// Scheme: mgr.GetScheme(),
 		// Recorder: mgr.GetEventRecorderFor("clustertoken-controller"),
 	}).SetupWithManager(mgr); err != nil {
@@ -235,7 +252,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

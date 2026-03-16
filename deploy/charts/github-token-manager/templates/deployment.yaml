@@ -43,8 +43,16 @@ spec:
       containers:
         - args:
             - --health-probe-bind-address=:8081
-            - --metrics-bind-address=127.0.0.1:8080
+            - --metrics-bind-address=:{{ .Values.metrics.listen.port }}
+            - --metrics-secure={{ .Values.metrics.secure }}
             - --leader-elect
+          {{- range $key, $value := $manager.extraArgs }}
+          {{- if kindIs "invalid" $value }}
+            - --{{ $key }}
+          {{- else }}
+            - --{{ $key }}={{ $value }}
+          {{- end }}
+          {{- end }}
           {{- with $manager.env }}
           env:
             {{- toYaml . | nindent 12 }}
