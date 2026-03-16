@@ -19,6 +19,7 @@ import (
 
 	"github.com/isometry/ghait"
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
+	"github.com/isometry/github-token-manager/internal/metrics"
 )
 
 const (
@@ -34,6 +35,7 @@ type tokenSecret struct {
 	key        types.NamespacedName
 	owner      tokenManager
 	ghait      ghait.GHAIT
+	metrics    *metrics.Recorder
 	*corev1.Secret
 }
 
@@ -57,6 +59,12 @@ func WithLogger(logger logr.Logger) Option {
 	}
 }
 
+func WithMetrics(m *metrics.Recorder) Option {
+	return func(s *tokenSecret) {
+		s.metrics = m
+	}
+}
+
 func NewTokenSecret(ctx context.Context, key types.NamespacedName, owner tokenManager, options ...Option) (*tokenSecret, error) {
 	s := &tokenSecret{
 		ctx:   ctx,
@@ -73,6 +81,7 @@ func NewTokenSecret(ctx context.Context, key types.NamespacedName, owner tokenMa
 			// If the custom resource is not found then, it usually means that it was deleted or not created
 			// In this way, we will stop the reconciliation
 			s.log.Info("token resource not found; ignoring since object must be deleted")
+			s.metrics.RemoveTokenActive(s.ctx, s.owner.GetType(), s.key.String())
 			return nil, nil
 		}
 		// Error reading the object - requeue the request.
@@ -103,11 +112,26 @@ func (s *tokenSecret) NewInstallationToken() (*github.InstallationToken, error) 
 	installationId := s.owner.GetInstallationID()
 	options := s.owner.GetInstallationTokenOptions()
 
-	return s.ghait.NewInstallationToken(s.ctx, installationId, options)
+	start := time.Now()
+	token, err := s.ghait.NewInstallationToken(s.ctx, installationId, options)
+	s.metrics.RecordGitHubAPIDuration(s.ctx, time.Since(start), err)
+	s.metrics.RecordGitHubTokenRequest(s.ctx, err)
+	return token, err
 }
 
 func (s *tokenSecret) RefreshOwner() error {
 	return s.reconciler.Get(s.ctx, s.key, s.owner)
+}
+
+func (s *tokenSecret) controllerName() string {
+	return s.owner.GetType()
+}
+
+func (s *tokenSecret) recordExpiry() {
+	_, expiresAt := s.owner.GetStatusTimestamps()
+	if !expiresAt.IsZero() {
+		s.metrics.RecordTokenExpiry(s.ctx, s.controllerName(), s.owner.GetSecretNamespace(), s.owner.GetName(), expiresAt)
+	}
 }
 
 func (s *tokenSecret) Reconcile() (result reconcile.Result, err error) {
@@ -138,15 +162,26 @@ func (s *tokenSecret) Reconcile() (result reconcile.Result, err error) {
 
 	if apierrors.IsNotFound(err) {
 		// Secret not found, so create it
+		start := time.Now()
 		if err := s.CreateSecret(); err != nil {
+			s.metrics.RecordTokenRefresh(s.ctx, s.controllerName(), metrics.ResultError)
+			s.metrics.RecordTokenRefreshDuration(s.ctx, s.controllerName(), metrics.OperationCreate, time.Since(start))
 			if errors.Is(err, ghait.TransientError{}) {
+				s.metrics.RecordReconcileError(s.ctx, s.controllerName(), metrics.ReasonTransient)
 				log.Error(err, "transient error creating secret")
 				return reconcile.Result{RequeueAfter: s.owner.GetRetryInterval()}, nil
 			}
 
+			s.metrics.RecordReconcileError(s.ctx, s.controllerName(), metrics.ReasonSecretCreate)
 			log.Error(err, "fatal error creating secret")
 			return result, err
 		}
+
+		s.metrics.RecordTokenRefresh(s.ctx, s.controllerName(), metrics.ResultSuccess)
+		s.metrics.RecordTokenRefreshDuration(s.ctx, s.controllerName(), metrics.OperationCreate, time.Since(start))
+		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationCreate, metrics.ResultSuccess)
+		s.metrics.EnsureTokenActive(s.ctx, s.controllerName(), s.key.String())
+		s.recordExpiry()
 
 		return reconcile.Result{RequeueAfter: s.owner.GetRefreshInterval()}, nil
 	}
@@ -163,6 +198,7 @@ func (s *tokenSecret) Reconcile() (result reconcile.Result, err error) {
 			log.Error(err, "failed to update token status")
 			return result, err
 		}
+		s.metrics.RecordReconcileError(s.ctx, s.controllerName(), metrics.ReasonOwnership)
 		err := errors.New("existing secret not owned by token")
 		log.Error(err, "ownership mismatch", "token", s.owner)
 		return result, err
@@ -170,15 +206,26 @@ func (s *tokenSecret) Reconcile() (result reconcile.Result, err error) {
 
 	s.Secret = secret
 
+	start := time.Now()
 	if err := s.UpdateSecret(); err != nil {
+		s.metrics.RecordTokenRefresh(s.ctx, s.controllerName(), metrics.ResultError)
+		s.metrics.RecordTokenRefreshDuration(s.ctx, s.controllerName(), metrics.OperationUpdate, time.Since(start))
 		if errors.Is(err, ghait.TransientError{}) {
+			s.metrics.RecordReconcileError(s.ctx, s.controllerName(), metrics.ReasonTransient)
 			log.Error(err, "transient error updating secret")
 			return reconcile.Result{RequeueAfter: s.owner.GetRetryInterval()}, nil
 		}
 
+		s.metrics.RecordReconcileError(s.ctx, s.controllerName(), metrics.ReasonSecretUpdate)
 		log.Error(err, "fatal error updating secret")
 		return result, err
 	}
+
+	s.metrics.RecordTokenRefresh(s.ctx, s.controllerName(), metrics.ResultSuccess)
+	s.metrics.RecordTokenRefreshDuration(s.ctx, s.controllerName(), metrics.OperationUpdate, time.Since(start))
+	s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationUpdate, metrics.ResultSuccess)
+	s.metrics.EnsureTokenActive(s.ctx, s.controllerName(), s.key.String())
+	s.recordExpiry()
 
 	return reconcile.Result{RequeueAfter: s.owner.GetRefreshInterval()}, nil
 }
@@ -190,6 +237,7 @@ func (s *tokenSecret) CreateSecret() error {
 	installationToken, err := s.NewInstallationToken()
 	if err != nil {
 		log.Error(err, "failed to get installation token")
+		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationCreate, metrics.ResultError)
 		return err
 	}
 
@@ -215,6 +263,7 @@ func (s *tokenSecret) CreateSecret() error {
 	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
 	if err := ctrl.SetControllerReference(s.owner, s.Secret, s.reconciler.Scheme()); err != nil {
 		log.Error(err, "failed to set controller reference")
+		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationCreate, metrics.ResultError)
 		return err
 	}
 
@@ -232,6 +281,7 @@ func (s *tokenSecret) CreateSecret() error {
 
 	if err := s.reconciler.Create(s.ctx, s.Secret); err != nil {
 		log.Error(err, "failed to create secret")
+		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationCreate, metrics.ResultError)
 		return err
 	}
 
@@ -259,6 +309,7 @@ func (s *tokenSecret) UpdateSecret() error {
 	installationToken, err := s.NewInstallationToken()
 	if err != nil {
 		log.Error(err, "failed to get installation token")
+		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationUpdate, metrics.ResultError)
 		return err
 	}
 
@@ -278,6 +329,7 @@ func (s *tokenSecret) UpdateSecret() error {
 
 	if err := s.reconciler.Update(s.ctx, s.Secret); err != nil {
 		log.Error(err, "failed to update secret")
+		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationUpdate, metrics.ResultError)
 		return err
 	}
 
@@ -332,8 +384,12 @@ func (s *tokenSecret) DeleteSecret(key types.NamespacedName) error {
 	log.Info("deleting existing secret")
 	if err := s.reconciler.Delete(s.ctx, secret); err != nil {
 		log.Error(err, "failed to delete secret")
+		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationDelete, metrics.ResultError)
 		return err
 	}
+
+	s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationDelete, metrics.ResultSuccess)
+	s.metrics.RemoveTokenActive(s.ctx, s.controllerName(), s.key.String())
 
 	condition.Message = "Deleted old Secret"
 

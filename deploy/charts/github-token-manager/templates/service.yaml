@@ -14,10 +14,12 @@ metadata:
     component: service
     {{- include "labels" . | nindent 4 }}
 spec:
-  {{- $service := .Values.metrics.service }}
   type: {{ .Values.metrics.service.type }}
   ports:
-    {{ $service.ports | toYaml | nindent 4 }}
+    - name: http-metrics
+      port: {{ .Values.metrics.listen.port }}
+      protocol: TCP
+      targetPort: {{ .Values.metrics.listen.port }}
   selector:
     {{- include "selectorLabels" . | nindent 4 }}
 {{- end }}

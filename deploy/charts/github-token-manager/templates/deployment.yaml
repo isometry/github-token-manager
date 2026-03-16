@@ -43,16 +43,24 @@ spec:
       containers:
         - args:
             - --health-probe-bind-address=:8081
-            - --metrics-bind-address=127.0.0.1:8080
+            - --metrics-bind-address=:{{ .Values.metrics.listen.port }}
+            - --metrics-secure={{ .Values.metrics.secure }}
             - --leader-elect
+          {{- range $key, $value := $manager.extraArgs }}
+          {{- if kindIs "invalid" $value }}
+            - --{{ $key }}
+          {{- else }}
+            - --{{ $key }}={{ $value }}
+          {{- end }}
+          {{- end }}
           {{- with $manager.env }}
           env:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           image: {{ if (hasPrefix "sha256:" (default "" $manager.tag)) -}}
-              {{- printf "%s@%s" $manager.repository $manager.tag -}}
+              {{- printf "%s@%s" (tpl $manager.repository .) $manager.tag -}}
             {{- else -}}
-              {{- printf "%s:%s" $manager.repository (or $manager.tag $.Chart.AppVersion "latest") -}}
+              {{- printf "%s:%s" (tpl $manager.repository .) (or $manager.tag $.Chart.AppVersion "latest") -}}
             {{- end }}
           livenessProbe:
             httpGet:

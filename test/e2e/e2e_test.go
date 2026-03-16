@@ -361,6 +361,66 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 		})
 	})
 
+	Context("Metrics", func() {
+		var metricsBody string
+
+		BeforeAll(func() {
+			By("finding the manager pod")
+			podName := clientCtx.getManagerPodName(operatorNamespace, map[string]string{
+				"app.kubernetes.io/name":     "github-token-manager",
+				"app.kubernetes.io/instance": "github-token-manager",
+			})
+
+			By("scraping /metrics via port-forward")
+			metricsBody = scrapeMetrics(operatorNamespace, podName, 8080)
+		})
+
+		It("exposes Prometheus metrics on the /metrics endpoint", func() {
+			By("checking for standard Go runtime metric")
+			Expect(metricsBody).To(ContainSubstring("go_goroutines"))
+
+			if hasAppCredentials {
+				By("checking for custom GTM metric TYPE lines (requires successful reconciliation)")
+				expectedTypes := []string{
+					"gtm_token_refresh_total",
+					"gtm_token_refresh_duration_seconds",
+					"gtm_github_api_call_duration_seconds",
+					"gtm_token_expiry_timestamp_seconds",
+					"gtm_tokens_active",
+					"gtm_secret_operations_total",
+					"gtm_github_token_requests_total",
+				}
+				for _, metric := range expectedTypes {
+					Expect(metricsBody).To(
+						ContainSubstring(fmt.Sprintf("# TYPE %s ", metric)),
+						"missing TYPE line for %s", metric,
+					)
+				}
+			}
+		})
+
+		It("reports non-zero token counters after reconciliation", func() {
+			if !hasAppCredentials {
+				Skip("skipping metrics counter checks - no valid GitHub App configuration provided")
+			}
+
+			By("checking gtm_token_refresh_total has success count >= 1")
+			Expect(metricsBody).To(
+				MatchRegexp(`gtm_token_refresh_total\{[^}]*result="success"[^}]*\}\s+[1-9]`),
+			)
+
+			By("checking gtm_github_token_requests_total has success count >= 1")
+			Expect(metricsBody).To(
+				MatchRegexp(`gtm_github_token_requests_total\{[^}]*result="success"[^}]*\}\s+[1-9]`),
+			)
+
+			By("checking gtm_secret_operations_total has success count >= 1")
+			Expect(metricsBody).To(
+				MatchRegexp(`gtm_secret_operations_total\{[^}]*result="success"[^}]*\}\s+[1-9]`),
+			)
+		})
+	})
+
 	Context("Helm Chart", func() {
 		It("should uninstall without error", func() {
 			By("uninstalling Helm chart")

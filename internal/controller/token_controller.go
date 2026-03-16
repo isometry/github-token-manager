@@ -29,12 +29,14 @@ import (
 
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
 	"github.com/isometry/github-token-manager/internal/ghapp"
+	"github.com/isometry/github-token-manager/internal/metrics"
 	tm "github.com/isometry/github-token-manager/internal/tokenmanager"
 )
 
 // TokenReconciler reconciles a Token object
 type TokenReconciler struct {
 	client.Client
+	Metrics *metrics.Recorder
 	// Scheme *runtime.Scheme
 	// Recorder record.EventRecorder
 }
@@ -60,6 +62,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 	if app == nil {
 		app, err = ghapp.NewGHApp(ctx)
 		if err != nil {
+			r.Metrics.RecordConfigError(ctx, "ghapp")
 			logger.Error(err, "failed to load GitHub App credentials")
 			return ctrl.Result{RequeueAfter: time.Minute}, err
 		}
@@ -70,6 +73,7 @@ func (r *TokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (resu
 		tm.WithReconciler(r),
 		tm.WithGHApp(app),
 		tm.WithLogger(logger),
+		tm.WithMetrics(r.Metrics),
 	}
 
 	tokenSecret, err := tm.NewTokenSecret(ctx, req.NamespacedName, token, options...)

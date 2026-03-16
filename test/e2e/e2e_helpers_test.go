@@ -27,6 +27,9 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -382,4 +385,53 @@ func newTokenValidator(repository string) func(string) error {
 	return func(token string) error {
 		return checkToken(repository, token)
 	}
+}
+
+// getManagerPodName returns the name of the single Running manager pod matching the given labels.
+func (c *clientContext) getManagerPodName(namespace string, labels map[string]string) string {
+	podList := &corev1.PodList{}
+	Expect(
+		c.client.List(c.context, podList,
+			client.InNamespace(namespace),
+			client.MatchingLabels(labels),
+		),
+	).NotTo(HaveOccurred())
+	Expect(podList.Items).To(HaveLen(1), "expected exactly 1 manager pod")
+	Expect(podList.Items[0].Status.Phase).To(Equal(corev1.PodRunning))
+	return podList.Items[0].Name
+}
+
+// scrapeMetrics port-forwards to the given pod and scrapes /metrics, returning the response body.
+func scrapeMetrics(namespace, podName string, remotePort int) string {
+	// Allocate a free local port
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	Expect(err).NotTo(HaveOccurred())
+	localPort := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	// Start kubectl port-forward
+	cmd := exec.Command("kubectl", "port-forward",
+		fmt.Sprintf("pod/%s", podName),
+		fmt.Sprintf("%d:%d", localPort, remotePort),
+		"-n", namespace,
+	)
+	cmd.Stdout = ginkgo.GinkgoWriter
+	cmd.Stderr = ginkgo.GinkgoWriter
+	Expect(cmd.Start()).To(Succeed())
+	defer cmd.Process.Kill() //nolint:errcheck
+
+	metricsURL := fmt.Sprintf("http://127.0.0.1:%d/metrics", localPort)
+	var body string
+
+	Eventually(func(g Gomega) {
+		resp, err := http.Get(metricsURL) //nolint:gosec
+		g.Expect(err).NotTo(HaveOccurred())
+		defer resp.Body.Close()
+		g.Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		b, err := io.ReadAll(resp.Body)
+		g.Expect(err).NotTo(HaveOccurred())
+		body = string(b)
+	}).Within(30 * time.Second).ProbeEvery(1 * time.Second).Should(Succeed())
+
+	return body
 }
