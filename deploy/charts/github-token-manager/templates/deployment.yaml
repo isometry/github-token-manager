@@ -58,9 +58,9 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           image: {{ if (hasPrefix "sha256:" (default "" $manager.tag)) -}}
-              {{- printf "%s@%s" $manager.repository $manager.tag -}}
+              {{- printf "%s@%s" (tpl $manager.repository .) $manager.tag -}}
             {{- else -}}
-              {{- printf "%s:%s" $manager.repository (or $manager.tag $.Chart.AppVersion "latest") -}}
+              {{- printf "%s:%s" (tpl $manager.repository .) (or $manager.tag $.Chart.AppVersion "latest") -}}
             {{- end }}
           livenessProbe:
             httpGet:
