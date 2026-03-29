@@ -4,6 +4,8 @@ config:
   installation_id: 0
   provider: aws
   key: alias/github-token-manager
+  # validate_key: validate key accessibility and suitability for signing on startup
+  validate_key: false
 
 # Common values
 commonLabels: ~

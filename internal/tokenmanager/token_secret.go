@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/google/go-github/v80/github"
+	"github.com/google/go-github/v84/github"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -17,7 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/isometry/ghait"
+	"github.com/isometry/ghait/v84"
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
 	"github.com/isometry/github-token-manager/internal/metrics"
 )

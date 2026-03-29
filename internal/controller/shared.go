@@ -1,7 +1,7 @@
 package controller
 
 import (
-	"github.com/isometry/ghait"
+	"github.com/isometry/ghait/v84"
 )
 
 var (

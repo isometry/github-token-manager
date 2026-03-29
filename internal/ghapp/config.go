@@ -19,6 +19,7 @@ type OperatorConfig struct {
 	InstallationID int64  `mapstructure:"installation_id"`
 	Provider       string `mapstructure:"provider"`
 	Key            string `mapstructure:"key"`
+	ValidateKey    bool   `mapstructure:"validate_key"`
 }
 
 func (c *OperatorConfig) GetAppID() int64 {
@@ -35,6 +36,10 @@ func (c *OperatorConfig) GetProvider() string {
 
 func (c *OperatorConfig) GetKey() string {
 	return c.Key
+}
+
+func (c *OperatorConfig) GetValidateKey() bool {
+	return c.ValidateKey
 }
 
 // TokenValidity is the duration for which a token is valid. Always exactly 1 hour.

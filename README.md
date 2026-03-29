@@ -15,7 +15,7 @@ This operator solves the problem by functioning like cert-manager for GitHub tok
 
 ## Features
 
-- **🔐 Zero-Trust Security**: Never store GitHub App private keys in-cluster - integrates with AWS KMS, Google Cloud KMS, and HashiCorp Vault
+- **🔐 Zero-Trust Security**: Never store GitHub App private keys in-cluster - integrates with AWS KMS, Azure Key Vault, Google Cloud KMS, and HashiCorp Vault
 - **⏰ Ephemeral & Auto-Rotating**: Tokens expire in 1 hour and refresh automatically before expiration
 - **🎯 Fine-Grained Permissions**: Each token can have different scopes, down to specific repositories and permissions
 - **🏢 Multi-Tenancy**: Namespace isolation with `Token` CRD, cluster-wide control with `ClusterToken`
@@ -28,7 +28,7 @@ This operator solves the problem by functioning like cert-manager for GitHub tok
 
 - Kubernetes cluster (v1.30+)
 - [GitHub App](https://docs.github.com/en/apps/creating-github-apps) with required permissions (typically: `metadata: read`, `contents: read`, `statuses: write`)
-- GitHub App ID and Installation ID, with private key stored in AWS KMS, Google Cloud KMS, or HashiCorp Vault
+- GitHub App ID and Installation ID, with private key stored in AWS KMS, Azure Key Vault, Google Cloud KMS, or HashiCorp Vault
 
 ### Installation
 
@@ -57,6 +57,22 @@ stringData:
     installation_id: 4567890
     provider: aws
     key: alias/github-token-manager
+    validate_key: true  # optional: validate key on startup
+```
+
+```yaml
+# Azure Key Vault
+apiVersion: v1
+kind: Secret
+metadata:
+  name: gtm-config
+  namespace: github-token-manager
+stringData:
+  gtm.yaml: |
+    app_id: 1234
+    installation_id: 4567890
+    provider: azure
+    key: https://<vault-name>.vault.azure.net/keys/<key-name>
 ```
 
 ```yaml
@@ -78,19 +94,33 @@ stringData:
     -----END RSA PRIVATE KEY-----
 ```
 
+**Configuration Fields:**
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `app_id` | yes | | GitHub App ID |
+| `installation_id` | yes | | GitHub App Installation ID |
+| `provider` | no | `file` | Key provider: `aws`, `azure`, `gcp`, `vault`, or `file` |
+| `key` | yes | | Key identifier (alias, URI, path, or embedded key depending on provider) |
+| `validate_key` | no | `false` | Validate the key on startup, failing fast on misconfiguration |
+
+When `validate_key` is enabled, the operator verifies at startup that the configured key is accessible and suitable for signing. This requires additional read permissions on the key (e.g., `kms:DescribeKey` for AWS, `keys/get` for Azure, `cloudkms.cryptoKeyVersions.get` for GCP, `read` on the key path for Vault).
+
 **Cloud KMS Permissions Required:**
 
-- **AWS KMS**: IAM permissions `kms:DescribeKey` and `kms:Sign` on the KMS key
-- **GCP KMS**: Permission `cloudkms.cryptoKeyVersions.useToSign` or role `roles/cloudkms.cryptoKeyVersionsSigner`
-- **Vault**: Policy with `write` capability on transit sign path (e.g., `transit/sign/<keyName>`)
+- **AWS KMS**: `kms:Sign` on the KMS key (+ `kms:DescribeKey` if `validate_key` is enabled)
+- **Azure Key Vault**: `keys/sign` on the key (+ `keys/get` if `validate_key` is enabled)
+- **GCP KMS**: `cloudkms.cryptoKeyVersions.useToSign` or role `roles/cloudkms.cryptoKeyVersionsSigner` (+ `cloudkms.cryptoKeyVersions.get` if `validate_key` is enabled)
+- **Vault**: `write` capability on transit sign path, e.g. `transit/sign/<keyName>` (+ `read` on `transit/keys/<keyName>` if `validate_key` is enabled)
 
 **Pod Authentication:**
 
 - **AWS**: IRSA, Pod Identity, or instance profile with above KMS permissions
+- **Azure**: Workload Identity or managed identity with Key Vault access
 - **GCP**: Workload Identity or service account with Cloud KMS access
 - **Vault**: Kubernetes auth method configured with appropriate transit policy
 
-Supported providers: `aws` (KMS), `gcp` (Cloud KMS), `vault` (Transit Engine), `file` (embedded)
+Supported providers: `aws` (KMS), `azure` (Key Vault), `gcp` (Cloud KMS), `vault` (Transit Engine), `file` (embedded)
 
 ### Token Resources
 
@@ -151,6 +181,20 @@ spec:
     metadata: read
     statuses: write
 ```
+
+## Custom Builds
+
+The default build includes all KMS providers (AWS, Azure, GCP, Vault, file). To produce a smaller binary that excludes unwanted providers and their dependencies, use Go build tags:
+
+```bash
+# Exclude AWS and Azure providers
+go build -tags ghait.no_aws,ghait.no_azure ./cmd/manager
+
+# Build with only file and Vault providers
+go build -tags ghait.no_aws,ghait.no_azure,ghait.no_gcp ./cmd/manager
+```
+
+Available opt-out tags: `ghait.no_aws`, `ghait.no_azure`, `ghait.no_gcp`, `ghait.no_vault`, `ghait.no_file`
 
 ## Development
 

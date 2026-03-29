@@ -18,6 +18,9 @@ stringData:
     app_id: {{ .Values.config.app_id | int }}
     installation_id: {{ .Values.config.installation_id | int }}
     provider: "{{ .Values.config.provider }}"
+  {{- if .Values.config.validate_key }}
+    validate_key: true
+  {{- end }}
   {{- if ne .Values.config.provider "file" }}
     key: "{{ .Values.config.key }}"
   {{- else }}
