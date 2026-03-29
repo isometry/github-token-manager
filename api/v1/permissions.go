@@ -198,7 +198,9 @@ func (p *Permissions) ToInstallationPermissions() *github.InstallationPermission
 		Actions:                       p.Actions,
 		Administration:                p.Administration,
 		Checks:                        p.Checks,
+		Codespaces:                    p.Codespaces,
 		Contents:                      p.Contents,
+		DependabotSecrets:             p.DependabotSecrets,
 		Deployments:                   p.Deployments,
 		Emails:                        p.EmailAddresses, // !!!
 		Environments:                  p.Environments,
@@ -218,6 +220,7 @@ func (p *Permissions) ToInstallationPermissions() *github.InstallationPermission
 		Packages:                      p.Packages,
 		Pages:                         p.Pages,
 		PullRequests:                  p.PullRequests,
+		RepositoryCustomProperties:    p.RepositoryCustomProperties,
 		RepositoryHooks:               p.RepositoryHooks,
 		RepositoryProjects:            p.RepositoryProjects,
 		Secrets:                       p.Secrets,
