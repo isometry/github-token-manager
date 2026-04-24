@@ -39,6 +39,21 @@ spec:
             spec:
               description: TokenSpec defines the desired state of Token
               properties:
+                appRef:
+                  description: |-
+                    Reference to the App that provides the GitHub App credentials for this
+                    Token. Must be in the same namespace as the Token. When unset, the
+                    operator's startup configuration is used.
+                  properties:
+                    name:
+                      description:
+                        Name of the App resource in the same namespace as
+                        the referring Token.
+                      maxLength: 253
+                      type: string
+                  required:
+                    - name
+                  type: object
                 installationID:
                   description:
                     Specify or override the InstallationID of the GitHub

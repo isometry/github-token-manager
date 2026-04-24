@@ -47,6 +47,26 @@ spec:
             spec:
               description: ClusterTokenSpec defines the desired state of ClusterToken
               properties:
+                appRef:
+                  description: |-
+                    Reference to the App that provides the GitHub App credentials
+                    for this ClusterToken. When spec.appRef.namespace is empty, the
+                    operator resolves the reference in its own namespace. When unset,
+                    the operator's startup configuration is used.
+                  properties:
+                    name:
+                      description: Name of the App resource.
+                      maxLength: 253
+                      type: string
+                    namespace:
+                      description: |-
+                        Namespace containing the App resource. If empty, defaults to
+                        the operator's own namespace.
+                      maxLength: 253
+                      type: string
+                  required:
+                    - name
+                  type: object
                 installationID:
                   description:
                     Specify or override the InstallationID of the GitHub
@@ -444,6 +464,20 @@ spec:
             spec:
               description: TokenSpec defines the desired state of Token
               properties:
+                appRef:
+                  description: |-
+                    Reference to the App that provides the GitHub App credentials
+                    for this Token. Must be in the same namespace as the Token.
+                    When unset, the operator's startup configuration is used.
+                  properties:
+                    name:
+                      description: Name of the App resource in the same namespace
+                        as the referring Token.
+                      maxLength: 253
+                      type: string
+                  required:
+                    - name
+                  type: object
                 installationID:
                   description:
                     Specify or override the InstallationID of the GitHub
@@ -782,6 +816,180 @@ spec:
                   required:
                     - basicAuth
                   type: object
+              type: object
+          type: object
+      served: true
+      storage: true
+      subresources:
+        status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: apps.github.as-code.io
+  {{- with mergeOverwrite (default dict .Values.commonAnnotations) (ternary (dict "helm.sh/resource-policy" "keep") (dict) .Values.crds.keep) }}
+  annotations:
+    {{- range $key, $value := . }}
+    {{ $key }}: {{ tpl $value $ | quote }}
+    {{- end }}
+  {{- end }}
+  labels:
+    component: crd
+    {{- include "labels" . | nindent 4 }}
+spec:
+  group: github.as-code.io
+  names:
+    kind: App
+    listKind: AppList
+    plural: apps
+    shortNames:
+      - app
+    singular: app
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.appID
+          name: App ID
+          type: integer
+        - jsonPath: .spec.installationID
+          name: Installation ID
+          type: integer
+        - jsonPath: .spec.provider
+          name: Provider
+          type: string
+        - jsonPath: .status.conditions[?(@.type=="Ready")].status
+          name: Ready
+          type: string
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1
+      schema:
+        openAPIV3Schema:
+          description: |-
+            App is the Schema for the apps API; it encapsulates a GitHub App
+            configuration that Tokens and ClusterTokens may reference via spec.appRef.
+          properties:
+            apiVersion:
+              type: string
+            kind:
+              type: string
+            metadata:
+              type: object
+            spec:
+              description: AppSpec defines the desired state of an App.
+              properties:
+                appID:
+                  description: The AppID of the GitHub App.
+                  example: 12345
+                  format: int64
+                  type: integer
+                installationID:
+                  description: |-
+                    The default InstallationID of the GitHub App; Tokens/ClusterTokens
+                    may override this via spec.installationID to target a different
+                    installation.
+                  example: 123456789
+                  format: int64
+                  type: integer
+                key:
+                  description: |-
+                    Cloud-KMS key reference. Required when provider is "aws", "azure",
+                    "gcp", or "vault"; forbidden when provider is "secret".
+                  type: string
+                keyRef:
+                  description: |-
+                    Same-namespace Secret reference holding the PEM-encoded RSA
+                    private key. Required when provider is "secret"; forbidden
+                    otherwise.
+                  properties:
+                    name:
+                      description: Name of the Secret in the App's namespace.
+                      maxLength: 253
+                      type: string
+                    key:
+                      default: private-key.pem
+                      description: |-
+                        Key within the Secret's data map containing the PEM-encoded
+                        RSA private key. Defaults to "private-key.pem".
+                      type: string
+                  required:
+                    - name
+                  type: object
+                provider:
+                  description: |-
+                    Private key provider. One of "secret" (PEM material in a
+                    same-namespace Secret, referenced by keyRef), "aws" (AWS KMS),
+                    "azure" (Azure Key Vault), "gcp" (Google Cloud KMS), or "vault"
+                    (HashiCorp Vault transit). The "file" provider is intentionally
+                    not supported on an App; use the operator's startup configuration
+                    for file-based keys.
+                  enum:
+                    - secret
+                    - aws
+                    - azure
+                    - gcp
+                    - vault
+                  type: string
+                validateKey:
+                  default: false
+                  description: |-
+                    If true, the operator validates the private key at reconcile time
+                    by attempting a test sign.
+                  type: boolean
+              required:
+                - appID
+                - installationID
+                - provider
+              type: object
+              x-kubernetes-validations:
+                - rule: "(self.provider == 'secret') == has(self.keyRef)"
+                  message: "keyRef must be set if and only if provider is 'secret'"
+                - rule: "(self.provider != 'secret') == has(self.key)"
+                  message: "key must be set if and only if provider is not 'secret'"
+            status:
+              description: AppStatus defines the observed state of an App.
+              properties:
+                conditions:
+                  items:
+                    description: Condition contains details for one aspect of the current state of this API Resource.
+                    properties:
+                      lastTransitionTime:
+                        format: date-time
+                        type: string
+                      message:
+                        maxLength: 32768
+                        type: string
+                      observedGeneration:
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      reason:
+                        maxLength: 1024
+                        minLength: 1
+                        pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                        type: string
+                      status:
+                        enum:
+                          - "True"
+                          - "False"
+                          - Unknown
+                        type: string
+                      type:
+                        maxLength: 316
+                        pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                        type: string
+                    required:
+                      - lastTransitionTime
+                      - message
+                      - reason
+                      - status
+                      - type
+                    type: object
+                  type: array
+                observedGeneration:
+                  format: int64
+                  type: integer
               type: object
           type: object
       served: true

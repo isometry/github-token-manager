@@ -1,5 +1,11 @@
 ---
 config:
+  # secretName: name of the Secret mounted at /config containing the startup
+  # gtm.yaml. Defaults to 'gtm-config'. The chart only creates this Secret when
+  # config.app_id is non-zero; with config.app_id == 0 the operator starts in
+  # App-CR-only mode, or you can pre-create a Secret of this name out-of-band
+  # (e.g. via External Secrets Operator or Sealed Secrets).
+  secretName: gtm-config
   app_id: 0
   installation_id: 0
   provider: aws

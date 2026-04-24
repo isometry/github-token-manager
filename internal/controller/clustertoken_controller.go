@@ -18,14 +18,16 @@ package controller
 
 import (
 	"context"
-	"time"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
 	"github.com/isometry/github-token-manager/internal/ghapp"
@@ -36,48 +38,57 @@ import (
 // ClusterTokenReconciler reconciles a ClusterToken object
 type ClusterTokenReconciler struct {
 	client.Client
-	Metrics *metrics.Recorder
-	// Scheme *runtime.Scheme
-	// Recorder record.EventRecorder
+	Metrics  *metrics.Recorder
+	Registry *ghapp.Registry
 }
 
-// +kubebuilder:rbac:groups=github.as-code.io,resources=clustertokens,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=github.as-code.io,resources=clustertokens,verbs=get;list;watch
 // +kubebuilder:rbac:groups=github.as-code.io,resources=clustertokens/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=github.as-code.io,resources=clustertokens/finalizers,verbs=update
+// +kubebuilder:rbac:groups=github.as-code.io,resources=apps,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the ClusterToken object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
 //
 // For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.16.3/pkg/reconcile
+// - https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile
 func (r *ClusterTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	logger := log.FromContext(ctx)
+	logger.V(1).Info("reconcile start")
 
-	if app == nil {
-		app, err = ghapp.NewGHApp(ctx)
-		if err != nil {
-			r.Metrics.RecordConfigError(ctx, "ghapp")
-			logger.Error(err, "failed to load GitHub App credentials")
-			return ctrl.Result{RequeueAfter: time.Minute}, err
+	token := &githubv1.ClusterToken{}
+	if err := r.Get(ctx, req.NamespacedName, token); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
 		}
+		return ctrl.Result{}, err
 	}
 
-	// Fetch Token instance
-	token := &githubv1.ClusterToken{}
+	resolution := resolveApp(ctx, r.Client, r.Registry, token.GetAppRef())
+	if resolution.FailCondition != nil {
+		r.Metrics.RecordConfigError(ctx, "github-clustertoken", "ghapp")
+		logger.Info("App reference unavailable",
+			"reason", resolution.FailCondition.Reason,
+			"message", resolution.FailCondition.Message,
+		)
+		if token.SetStatusCondition(*resolution.FailCondition) {
+			if err := r.Status().Update(ctx, token); err != nil {
+				logger.Error(err, "failed to update ClusterToken status with AppRef failure")
+				return ctrl.Result{}, err
+			}
+		}
+		return ctrl.Result{RequeueAfter: resolution.RequeueAfter}, nil
+	}
+
 	options := []tm.Option{
 		tm.WithReconciler(r),
-		tm.WithGHApp(app),
+		tm.WithGHApp(resolution.Client),
 		tm.WithLogger(logger),
 		tm.WithMetrics(r.Metrics),
 	}
 
-	tokenSecret, err := tm.NewTokenSecret(ctx, req.NamespacedName, token, options...)
+	tokenSecret, err := tm.NewTokenSecret(ctx, req.NamespacedName, token, "github-clustertoken", options...)
 	if err != nil {
 		logger.Error(err, "failed to create ClusterToken reconciler")
 		return ctrl.Result{}, err
@@ -97,27 +108,36 @@ func (r *ClusterTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return result, nil
 }
 
-func ignoreClusterTokenStatusUpdatePredicate() predicate.Predicate {
-	return predicate.Funcs{
-		UpdateFunc: func(e event.UpdateEvent) bool {
-			oldToken, ok1 := e.ObjectOld.(*githubv1.ClusterToken)
-			newToken, ok2 := e.ObjectNew.(*githubv1.ClusterToken)
-			if ok1 && ok2 && oldToken.GetGeneration() == newToken.GetGeneration() {
-				// The generation has not changed, so ignore this update
-				return false
-			}
-			// The generation has changed, so handle this update
-			return true
-		},
+// mapAppToClusterTokens enqueues every ClusterToken whose spec.appRef
+// resolves to this App. The field index already accounts for the operator
+// namespace default, so a single lookup suffices.
+func (r *ClusterTokenReconciler) mapAppToClusterTokens(ctx context.Context, obj client.Object) []reconcile.Request {
+	app, ok := obj.(*githubv1.App)
+	if !ok {
+		return nil
 	}
+	indexValue := app.Namespace + "/" + app.Name
+	var list githubv1.ClusterTokenList
+	if err := r.List(ctx, &list, client.MatchingFields{ClusterTokenAppRefIndex: indexValue}); err != nil {
+		log.FromContext(ctx).Error(err, "failed to list ClusterTokens for App", "app", client.ObjectKeyFromObject(app))
+		return nil
+	}
+	requests := make([]reconcile.Request, 0, len(list.Items))
+	for i := range list.Items {
+		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(&list.Items[i])})
+	}
+	return requests
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ClusterTokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&githubv1.ClusterToken{}).
+		For(&githubv1.ClusterToken{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
 		Named("github-clustertoken").
-		WithEventFilter(ignoreClusterTokenStatusUpdatePredicate()).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 1}). // default
+		Watches(&githubv1.App{},
+			handler.EnqueueRequestsFromMapFunc(r.mapAppToClusterTokens),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
+		).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(r)
 }

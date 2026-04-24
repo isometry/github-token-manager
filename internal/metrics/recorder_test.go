@@ -16,18 +16,16 @@ func TestNilRecorderSafety(t *testing.T) {
 	ctx := context.Background()
 
 	// All methods must be callable on a nil receiver without panic.
-	r.RecordTokenRefresh(ctx, "token", ResultSuccess)
-	r.RecordTokenRefreshDuration(ctx, "token", OperationCreate, time.Second)
-	r.RecordGitHubAPIDuration(ctx, time.Second, nil)
-	r.RecordGitHubAPIDuration(ctx, time.Second, errors.New("test"))
-	r.RecordTokenExpiry(ctx, "token", "default", "my-token", time.Now())
-	r.RecordReconcileError(ctx, "token", ReasonTransient)
-	r.EnsureTokenActive(ctx, "token", "default/my-token")
-	r.RemoveTokenActive(ctx, "token", "default/my-token")
-	r.RecordSecretOperation(ctx, "token", OperationCreate, ResultSuccess)
-	r.RecordConfigError(ctx, "file")
-	r.RecordGitHubTokenRequest(ctx, nil)
-	r.RecordGitHubTokenRequest(ctx, errors.New("x"))
+	r.RecordTokenRefresh(ctx, "github-token", ResultSuccess)
+	r.RecordTokenRefreshDuration(ctx, "github-token", OperationCreate, time.Second)
+	r.RecordGitHubAPICall(ctx, "github-token", time.Second, nil)
+	r.RecordGitHubAPICall(ctx, "github-token", time.Second, errors.New("test"))
+	r.RecordTokenExpiry(ctx, "github-token", "default", "my-token", time.Now())
+	r.RecordReconcileError(ctx, "github-token", ReasonTransient)
+	r.EnsureTokenActive(ctx, "github-token", "default/my-token")
+	r.RemoveTokenActive(ctx, "github-token", "default/my-token")
+	r.RecordSecretOperation(ctx, "github-token", OperationCreate, ResultSuccess)
+	r.RecordConfigError(ctx, "github-token", "file")
 	if err := r.Shutdown(ctx); err != nil {
 		t.Errorf("Shutdown on nil receiver returned error: %v", err)
 	}
@@ -46,19 +44,17 @@ func TestRecorderInstruments(t *testing.T) {
 	ctx := context.Background()
 
 	// Record some values.
-	r.RecordTokenRefresh(ctx, "token", ResultSuccess)
-	r.RecordTokenRefresh(ctx, "token", ResultSuccess)
-	r.RecordTokenRefresh(ctx, "clustertoken", ResultError)
-	r.RecordTokenRefreshDuration(ctx, "token", OperationCreate, 500*time.Millisecond)
-	r.RecordGitHubAPIDuration(ctx, 200*time.Millisecond, nil)
-	r.RecordGitHubAPIDuration(ctx, 300*time.Millisecond, errors.New("rate limit"))
-	r.RecordTokenExpiry(ctx, "token", "default", "my-token", time.Unix(1700000000, 0))
-	r.RecordReconcileError(ctx, "token", ReasonGitHubAPI)
-	r.EnsureTokenActive(ctx, "token", "default/my-token")
-	r.RecordSecretOperation(ctx, "token", OperationCreate, ResultSuccess)
-	r.RecordConfigError(ctx, "file")
-	r.RecordGitHubTokenRequest(ctx, nil)
-	r.RecordGitHubTokenRequest(ctx, errors.New("rate limit"))
+	r.RecordTokenRefresh(ctx, "github-token", ResultSuccess)
+	r.RecordTokenRefresh(ctx, "github-token", ResultSuccess)
+	r.RecordTokenRefresh(ctx, "github-clustertoken", ResultError)
+	r.RecordTokenRefreshDuration(ctx, "github-token", OperationCreate, 500*time.Millisecond)
+	r.RecordGitHubAPICall(ctx, "github-token", 200*time.Millisecond, nil)
+	r.RecordGitHubAPICall(ctx, "github-token", 300*time.Millisecond, errors.New("rate limit"))
+	r.RecordTokenExpiry(ctx, "github-token", "default", "my-token", time.Unix(1700000000, 0))
+	r.RecordReconcileError(ctx, "github-token", ReasonGitHubAPI)
+	r.EnsureTokenActive(ctx, "github-token", "default/my-token")
+	r.RecordSecretOperation(ctx, "github-token", OperationCreate, ResultSuccess)
+	r.RecordConfigError(ctx, "github-app", "app")
 
 	// Collect and verify.
 	var rm metricdata.ResourceMetrics
@@ -69,60 +65,63 @@ func TestRecorderInstruments(t *testing.T) {
 	metrics := flattenMetrics(rm)
 
 	// Verify token refresh counter.
-	assertCounterValue(t, metrics, "gtm.token.refresh",
-		attribute.String("controller", "token"),
+	assertCounterValue(t, metrics, "token.refresh",
+		attribute.String("controller", "github-token"),
 		attribute.String("result", ResultSuccess),
 		2,
 	)
-	assertCounterValue(t, metrics, "gtm.token.refresh",
-		attribute.String("controller", "clustertoken"),
+	assertCounterValue(t, metrics, "token.refresh",
+		attribute.String("controller", "github-clustertoken"),
 		attribute.String("result", ResultError),
 		1,
 	)
 
 	// Verify reconcile errors counter.
-	assertCounterValue(t, metrics, "gtm.reconcile.errors",
-		attribute.String("controller", "token"),
+	assertCounterValue(t, metrics, "token.reconcile.errors",
+		attribute.String("controller", "github-token"),
 		attribute.String("reason", ReasonGitHubAPI),
 		1,
 	)
 
 	// Verify secret operations counter.
-	assertCounterValue(t, metrics, "gtm.secret.operations",
-		attribute.String("controller", "token"),
+	assertCounterValue(t, metrics, "kubernetes.secret.operations",
+		attribute.String("controller", "github-token"),
 		attribute.String("operation", OperationCreate),
 		attribute.String("result", ResultSuccess),
 		1,
 	)
 
 	// Verify config errors counter.
-	assertCounterValue(t, metrics, "gtm.config.errors",
-		attribute.String("source", "file"),
+	assertCounterValue(t, metrics, "config.errors",
+		attribute.String("controller", "github-app"),
+		attribute.String("source", "app"),
 		1,
 	)
 
 	// Verify tokens active up-down counter.
-	assertCounterValue(t, metrics, "gtm.tokens.active",
-		attribute.String("controller", "token"),
+	assertCounterValue(t, metrics, "tokens.active",
+		attribute.String("controller", "github-token"),
 		1,
 	)
 
 	// Verify histogram has data points.
-	assertHistogramCount(t, metrics, "gtm.token.refresh.duration", 1)
-	assertHistogramCount(t, metrics, "gtm.github.api_call.duration", 2)
+	assertHistogramCount(t, metrics, "token.refresh.duration", 1)
+	assertHistogramCount(t, metrics, "github.api.call.duration", 2)
 
-	// Verify gauge value.
-	assertGaugeValue(t, metrics, "gtm.token.expiry.timestamp", 1700000000)
-
-	// Verify GitHub token requests counter.
-	assertCounterValue(t, metrics, "gtm.github.token.requests",
+	// Verify github.api.requests counter ticks alongside the duration histogram.
+	assertCounterValue(t, metrics, "github.api.requests",
+		attribute.String("controller", "github-token"),
 		attribute.String("result", ResultSuccess),
 		1,
 	)
-	assertCounterValue(t, metrics, "gtm.github.token.requests",
+	assertCounterValue(t, metrics, "github.api.requests",
+		attribute.String("controller", "github-token"),
 		attribute.String("result", ResultError),
 		1,
 	)
+
+	// Verify gauge value.
+	assertGaugeValue(t, metrics, "token.expiry.timestamp", 1700000000)
 }
 
 func TestActiveTokenIdempotency(t *testing.T) {
@@ -138,27 +137,27 @@ func TestActiveTokenIdempotency(t *testing.T) {
 	ctx := context.Background()
 
 	// First call increments.
-	r.EnsureTokenActive(ctx, "token", "default/tok-a")
+	r.EnsureTokenActive(ctx, "github-token", "default/tok-a")
 	assertActiveCount(t, reader, ctx, 1)
 
 	// Duplicate call is a no-op.
-	r.EnsureTokenActive(ctx, "token", "default/tok-a")
+	r.EnsureTokenActive(ctx, "github-token", "default/tok-a")
 	assertActiveCount(t, reader, ctx, 1)
 
 	// Second distinct key increments again.
-	r.EnsureTokenActive(ctx, "token", "default/tok-b")
+	r.EnsureTokenActive(ctx, "github-token", "default/tok-b")
 	assertActiveCount(t, reader, ctx, 2)
 
 	// Remove one key.
-	r.RemoveTokenActive(ctx, "token", "default/tok-a")
+	r.RemoveTokenActive(ctx, "github-token", "default/tok-a")
 	assertActiveCount(t, reader, ctx, 1)
 
 	// Duplicate remove is a no-op.
-	r.RemoveTokenActive(ctx, "token", "default/tok-a")
+	r.RemoveTokenActive(ctx, "github-token", "default/tok-a")
 	assertActiveCount(t, reader, ctx, 1)
 
 	// Remove the other key.
-	r.RemoveTokenActive(ctx, "token", "default/tok-b")
+	r.RemoveTokenActive(ctx, "github-token", "default/tok-b")
 	assertActiveCount(t, reader, ctx, 0)
 }
 
@@ -169,9 +168,9 @@ func assertActiveCount(t *testing.T, reader *metric.ManualReader, ctx context.Co
 		t.Fatalf("Collect: %v", err)
 	}
 	metrics := flattenMetrics(rm)
-	m, ok := metrics["gtm.tokens.active"]
+	m, ok := metrics["tokens.active"]
 	if !ok {
-		t.Fatal("metric gtm.tokens.active not found")
+		t.Fatal("metric tokens.active not found")
 	}
 	data, ok := m.Data.(metricdata.Sum[int64])
 	if !ok {
@@ -182,7 +181,7 @@ func assertActiveCount(t *testing.T, reader *metric.ManualReader, ctx context.Co
 		total += dp.Value
 	}
 	if total != expected {
-		t.Errorf("gtm.tokens.active: got %d, want %d", total, expected)
+		t.Errorf("tokens.active: got %d, want %d", total, expected)
 	}
 }
 

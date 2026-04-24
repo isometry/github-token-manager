@@ -32,6 +32,13 @@ import (
 type ClusterTokenSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
+	// +optional
+	// Reference to the App that provides the GitHub App credentials for this
+	// ClusterToken. When spec.appRef.namespace is empty, the operator resolves
+	// the reference in its own namespace. When unset, the operator's startup
+	// configuration is used.
+	AppRef *AppReference `json:"appRef,omitempty"`
+
 	// +kubebuilder:validation:Required
 	Secret ClusterTokenSecretSpec `json:"secret"`
 
@@ -129,6 +136,19 @@ func (t *ClusterToken) GetName() string {
 
 func (t *ClusterToken) GetInstallationID() int64 {
 	return t.Spec.InstallationID
+}
+
+// GetAppRef returns the raw *AppReference set on the ClusterToken, or nil if
+// unset. The Namespace field may be empty; the caller (registry) defaults it
+// to the operator's own namespace.
+func (t *ClusterToken) GetAppRef() *AppReference {
+	if t.Spec.AppRef == nil {
+		return nil
+	}
+	return &AppReference{
+		Name:      t.Spec.AppRef.Name,
+		Namespace: t.Spec.AppRef.Namespace,
+	}
 }
 
 func (t *ClusterToken) GetRefreshInterval() time.Duration {
