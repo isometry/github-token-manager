@@ -33,6 +33,12 @@ type TokenSpec struct {
 	// Important: Run "make" to regenerate code after modifying this file
 
 	// +optional
+	// Reference to the App that provides the GitHub App credentials for this
+	// Token. Must be in the same namespace as the Token. When unset, the
+	// operator's startup configuration is used.
+	AppRef *LocalAppReference `json:"appRef,omitempty"`
+
+	// +optional
 	// Override the default token secret name and type
 	Secret TokenSecretSpec `json:"secret,omitempty"`
 
@@ -122,6 +128,20 @@ func (t *Token) GetName() string {
 
 func (t *Token) GetInstallationID() int64 {
 	return t.Spec.InstallationID
+}
+
+// GetAppRef returns a normalized *AppReference for the App backing this Token,
+// or nil when no AppRef is set (falling back to the startup config). The
+// namespace is always the Token's own namespace, since Tokens cannot reference
+// Apps cross-namespace.
+func (t *Token) GetAppRef() *AppReference {
+	if t.Spec.AppRef == nil {
+		return nil
+	}
+	return &AppReference{
+		Name:      t.Spec.AppRef.Name,
+		Namespace: t.Namespace,
+	}
 }
 
 func (t *Token) GetRefreshInterval() time.Duration {

@@ -22,6 +22,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -32,6 +33,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
@@ -40,6 +42,7 @@ import (
 
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
 	"github.com/isometry/github-token-manager/internal/controller"
+	"github.com/isometry/github-token-manager/internal/ghapp"
 	"github.com/isometry/github-token-manager/internal/metrics"
 	// +kubebuilder:scaffold:imports
 )
@@ -47,6 +50,8 @@ import (
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+	// version is stamped in via -ldflags "-X main.version=<v>" at build time.
+	version = "dev"
 )
 
 func init() {
@@ -195,7 +200,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	metricsRecorder, err := metrics.Setup()
+	metricsRecorder, err := metrics.Setup(version)
 	if err != nil {
 		setupLog.Error(err, "unable to set up metrics")
 		os.Exit(1)
@@ -206,22 +211,83 @@ func main() {
 		}
 	}()
 
+	operatorNamespace := getOperatorNamespace()
+	if operatorNamespace == "" {
+		setupLog.Error(nil, "operator namespace is unknown; set POD_NAMESPACE via the downward API")
+		os.Exit(1)
+	}
+
+	startupCfg, err := ghapp.LoadConfig(ctx)
+	if err != nil {
+		setupLog.Error(err, "failed to load startup GitHub App configuration; continuing with App CRs only")
+		startupCfg = nil
+	}
+	if startupCfg != nil && startupCfg.GetAppID() == 0 {
+		setupLog.Info("no startup GitHub App configuration found; Tokens/ClusterTokens must set spec.appRef")
+		startupCfg = nil
+	}
+
+	registry := ghapp.NewRegistry(operatorNamespace, startupCfg)
+
+	if err := mgr.GetFieldIndexer().IndexField(ctx, &githubv1.Token{}, controller.TokenAppRefIndex, func(obj client.Object) []string {
+		t := obj.(*githubv1.Token)
+		if t.Spec.AppRef == nil {
+			return nil
+		}
+		return []string{t.Spec.AppRef.Name}
+	}); err != nil {
+		setupLog.Error(err, "unable to create field indexer", "field", controller.TokenAppRefIndex)
+		os.Exit(1)
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(ctx, &githubv1.ClusterToken{}, controller.ClusterTokenAppRefIndex, func(obj client.Object) []string {
+		ct := obj.(*githubv1.ClusterToken)
+		if ct.Spec.AppRef == nil {
+			return nil
+		}
+		ns := ct.Spec.AppRef.Namespace
+		if ns == "" {
+			ns = operatorNamespace
+		}
+		return []string{ns + "/" + ct.Spec.AppRef.Name}
+	}); err != nil {
+		setupLog.Error(err, "unable to create field indexer", "field", controller.ClusterTokenAppRefIndex)
+		os.Exit(1)
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(ctx, &githubv1.App{}, controller.AppKeyRefIndex, func(obj client.Object) []string {
+		a := obj.(*githubv1.App)
+		if a.Spec.KeyRef == nil {
+			return nil
+		}
+		return []string{a.Spec.KeyRef.Name}
+	}); err != nil {
+		setupLog.Error(err, "unable to create field indexer", "field", controller.AppKeyRefIndex)
+		os.Exit(1)
+	}
+
 	if err = (&controller.TokenReconciler{
-		Client:  mgr.GetClient(),
-		Metrics: metricsRecorder,
-		// Scheme: mgr.GetScheme(),
-		// Recorder: mgr.GetEventRecorderFor("token-controller"),
+		Client:   mgr.GetClient(),
+		Metrics:  metricsRecorder,
+		Registry: registry,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Token")
 		os.Exit(1)
 	}
 	if err = (&controller.ClusterTokenReconciler{
-		Client:  mgr.GetClient(),
-		Metrics: metricsRecorder,
-		// Scheme: mgr.GetScheme(),
-		// Recorder: mgr.GetEventRecorderFor("clustertoken-controller"),
+		Client:   mgr.GetClient(),
+		Metrics:  metricsRecorder,
+		Registry: registry,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ClusterToken")
+		os.Exit(1)
+	}
+	if err = (&controller.AppReconciler{
+		Client:   mgr.GetClient(),
+		Metrics:  metricsRecorder,
+		Registry: registry,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "App")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder
@@ -256,4 +322,21 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+// getOperatorNamespace returns the namespace this operator Pod runs in. It
+// prefers the POD_NAMESPACE env var (typically supplied via the downward API)
+// and falls back to the in-cluster ServiceAccount namespace file. Returns ""
+// when the operator runs outside a cluster and POD_NAMESPACE is unset.
+func getOperatorNamespace() string {
+	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
+		return ns
+	}
+	const saNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+	if data, err := os.ReadFile(saNamespaceFile); err == nil {
+		if ns := strings.TrimSpace(string(data)); ns != "" {
+			return ns
+		}
+	}
+	return ""
 }

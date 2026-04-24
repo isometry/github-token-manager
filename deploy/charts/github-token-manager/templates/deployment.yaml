@@ -53,10 +53,14 @@ spec:
             - --{{ $key }}={{ $value }}
           {{- end }}
           {{- end }}
-          {{- with $manager.env }}
           env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            {{- with $manager.env }}
             {{- toYaml . | nindent 12 }}
-          {{- end }}
+            {{- end }}
           image: {{ if (hasPrefix "sha256:" (default "" $manager.tag)) -}}
               {{- printf "%s@%s" (tpl $manager.repository .) $manager.tag -}}
             {{- else -}}
@@ -107,4 +111,5 @@ spec:
         - name: config
           secret:
             defaultMode: 444
-            secretName: gtm-config
+            optional: true
+            secretName: {{ .Values.config.secretName }}

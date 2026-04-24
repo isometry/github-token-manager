@@ -97,4 +97,5 @@ spec:
         - name: config
           secret:
             defaultMode: 444
+            optional: true
             secretName: gtm-config
