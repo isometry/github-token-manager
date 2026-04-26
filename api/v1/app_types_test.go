@@ -7,53 +7,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestAppSpec_CloudProviderShape(t *testing.T) {
-	app := &v1.App{
-		Spec: v1.AppSpec{
-			AppID:          12345,
-			InstallationID: 67890,
-			Provider:       "aws",
-			Key:            "alias/github-token-manager",
-			ValidateKey:    true,
-		},
-	}
-	if app.Spec.AppID != 12345 || app.Spec.InstallationID != 67890 {
-		t.Errorf("ID round-trip failed: %+v", app.Spec)
-	}
-	if app.Spec.Provider != "aws" || app.Spec.Key != "alias/github-token-manager" {
-		t.Errorf("provider/key round-trip failed: %+v", app.Spec)
-	}
-	if !app.Spec.ValidateKey {
-		t.Errorf("ValidateKey round-trip failed")
-	}
-	if app.Spec.KeyRef != nil {
-		t.Errorf("cloud-provider App should not carry KeyRef, got %+v", app.Spec.KeyRef)
-	}
-}
-
-func TestAppSpec_SecretProviderShape(t *testing.T) {
-	app := &v1.App{
-		Spec: v1.AppSpec{
-			AppID:          1,
-			InstallationID: 2,
-			Provider:       "secret",
-			KeyRef: &v1.KeySecretReference{
-				Name: "gh-app-key",
-				Key:  "private-key.pem",
-			},
-		},
-	}
-	if app.Spec.Provider != "secret" {
-		t.Fatalf("provider = %q, want secret", app.Spec.Provider)
-	}
-	if app.Spec.Key != "" {
-		t.Errorf("secret-provider App should leave Key empty, got %q", app.Spec.Key)
-	}
-	if app.Spec.KeyRef == nil || app.Spec.KeyRef.Name != "gh-app-key" || app.Spec.KeyRef.Key != "private-key.pem" {
-		t.Errorf("KeyRef round-trip failed: %+v", app.Spec.KeyRef)
-	}
-}
-
 func TestApp_SetStatusCondition(t *testing.T) {
 	app := &v1.App{}
 

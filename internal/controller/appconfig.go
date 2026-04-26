@@ -74,7 +74,7 @@ func resolveAppConfig(ctx context.Context, c client.Reader, app *githubv1.App) (
 	nn := types.NamespacedName{Namespace: app.Namespace, Name: app.Spec.KeyRef.Name}
 	if err := c.Get(ctx, nn, &secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, "", githubv1.ReasonSecretNotFound, fmt.Errorf("Secret %s not found", nn)
+			return nil, "", githubv1.ReasonSecretNotFound, fmt.Errorf("Secret %s not found: %w", nn, err)
 		}
 		return nil, "", githubv1.ReasonSetupFailed, fmt.Errorf("fetch Secret %s: %w", nn, err)
 	}

@@ -77,63 +77,60 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 	if resolveErr != nil {
 		buildErr = resolveErr
 		failure = reason
-	} else {
-		_, err := r.Registry.ForApp(ctx, key, version, cfg)
-		if err != nil {
-			buildErr = err
-			failure = githubv1.ReasonSetupFailed
-		}
+	} else if _, err := r.Registry.ForApp(ctx, key, version, cfg); err != nil {
+		buildErr = err
+		failure = githubv1.ReasonSetupFailed
 	}
+
 	if buildErr != nil {
 		logger.Error(buildErr, "failed to build GitHub App client", "app", req.NamespacedName)
 		if r.Metrics != nil {
-			r.Metrics.RecordConfigError(ctx, "github-app", "app")
+			r.Metrics.RecordConfigError(ctx, ControllerNameApp, "app")
 		}
 		r.Registry.Invalidate(key)
-
-		changed := app.SetStatusCondition(metav1.Condition{
+		ready := metav1.Condition{
 			Type:    githubv1.ConditionTypeReady,
 			Status:  metav1.ConditionFalse,
 			Reason:  failure,
 			Message: buildErr.Error(),
-		})
-		if app.Spec.ValidateKey {
-			if app.SetStatusCondition(metav1.Condition{
-				Type:    githubv1.ConditionTypeKeyValid,
-				Status:  metav1.ConditionFalse,
-				Reason:  failure,
-				Message: buildErr.Error(),
-			}) {
-				changed = true
-			}
-		} else if meta.RemoveStatusCondition(&app.Status.Conditions, githubv1.ConditionTypeKeyValid) {
-			changed = true
 		}
-		if app.Status.ObservedGeneration != app.Generation {
-			app.Status.ObservedGeneration = app.Generation
-			changed = true
+		keyValid := metav1.Condition{
+			Type:    githubv1.ConditionTypeKeyValid,
+			Status:  metav1.ConditionFalse,
+			Reason:  failure,
+			Message: buildErr.Error(),
 		}
-		if changed {
-			if err := r.Status().Update(ctx, app); err != nil {
-				return ctrl.Result{}, err
-			}
+		if err := r.writeAppStatus(ctx, app, ready, keyValid); err != nil {
+			return ctrl.Result{}, err
 		}
 		return ctrl.Result{RequeueAfter: appRetryInterval}, nil
 	}
 
-	changed := app.SetStatusCondition(metav1.Condition{
+	ready := metav1.Condition{
 		Type:    githubv1.ConditionTypeReady,
 		Status:  metav1.ConditionTrue,
 		Reason:  githubv1.ReasonReconciled,
 		Message: "GitHub App client ready",
-	})
+	}
+	keyValid := metav1.Condition{
+		Type:    githubv1.ConditionTypeKeyValid,
+		Status:  metav1.ConditionTrue,
+		Reason:  githubv1.ReasonReconciled,
+		Message: "signer key validated",
+	}
+	if err := r.writeAppStatus(ctx, app, ready, keyValid); err != nil {
+		return ctrl.Result{}, err
+	}
+	return ctrl.Result{}, nil
+}
+
+// writeAppStatus applies the Ready condition, applies or clears the KeyValid
+// condition based on Spec.ValidateKey, bumps ObservedGeneration, and writes
+// status only if anything actually changed.
+func (r *AppReconciler) writeAppStatus(ctx context.Context, app *githubv1.App, ready, keyValid metav1.Condition) error {
+	changed := app.SetStatusCondition(ready)
 	if app.Spec.ValidateKey {
-		if app.SetStatusCondition(metav1.Condition{
-			Type:    githubv1.ConditionTypeKeyValid,
-			Status:  metav1.ConditionTrue,
-			Reason:  githubv1.ReasonReconciled,
-			Message: "signer key validated",
-		}) {
+		if app.SetStatusCondition(keyValid) {
 			changed = true
 		}
 	} else if meta.RemoveStatusCondition(&app.Status.Conditions, githubv1.ConditionTypeKeyValid) {
@@ -143,12 +140,10 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		app.Status.ObservedGeneration = app.Generation
 		changed = true
 	}
-	if changed {
-		if err := r.Status().Update(ctx, app); err != nil {
-			return ctrl.Result{}, err
-		}
+	if !changed {
+		return nil
 	}
-	return ctrl.Result{}, nil
+	return r.Status().Update(ctx, app)
 }
 
 // mapSecretToApps enqueues every App in the Secret's namespace whose
@@ -203,7 +198,7 @@ func (r *AppReconciler) secretReferencedByApp(obj client.Object) bool {
 func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&githubv1.App{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Named("github-app").
+		Named(ControllerNameApp).
 		Watches(&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.mapSecretToApps),
 			builder.WithPredicates(
@@ -211,6 +206,6 @@ func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 				predicate.NewPredicateFuncs(r.secretReferencedByApp),
 			),
 		).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
 		Complete(r)
 }

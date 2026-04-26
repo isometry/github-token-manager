@@ -60,6 +60,20 @@ type appResolution struct {
 	RequeueAfter time.Duration
 }
 
+// failResolution builds an appResolution carrying a not-Ready condition with
+// the given reason/message and the standard retry interval.
+func failResolution(reason, message string) appResolution {
+	return appResolution{
+		FailCondition: &metav1.Condition{
+			Type:    githubv1.ConditionTypeReady,
+			Status:  metav1.ConditionFalse,
+			Reason:  reason,
+			Message: message,
+		},
+		RequeueAfter: appRefRetryInterval,
+	}
+}
+
 // resolveApp returns the ghait client for the given *AppReference. A nil ref
 // falls back to the startup configuration. When the ref points to an
 // unresolvable or not-yet-Ready App, a condition describing the problem is
@@ -72,15 +86,7 @@ func resolveApp(ctx context.Context, c client.Client, reg *ghapp.Registry, ref *
 	if ref == nil {
 		cli, err := reg.Startup(ctx)
 		if err != nil {
-			return appResolution{
-				FailCondition: &metav1.Condition{
-					Type:    githubv1.ConditionTypeReady,
-					Status:  metav1.ConditionFalse,
-					Reason:  githubv1.ReasonNoStartupConfig,
-					Message: err.Error(),
-				},
-				RequeueAfter: appRefRetryInterval,
-			}
+			return failResolution(githubv1.ReasonNoStartupConfig, err.Error())
 		}
 		return appResolution{Client: cli}
 	}
@@ -94,51 +100,19 @@ func resolveApp(ctx context.Context, c client.Client, reg *ghapp.Registry, ref *
 	var app githubv1.App
 	if err := c.Get(ctx, nn, &app); err != nil {
 		if apierrors.IsNotFound(err) {
-			return appResolution{
-				FailCondition: &metav1.Condition{
-					Type:    githubv1.ConditionTypeReady,
-					Status:  metav1.ConditionFalse,
-					Reason:  githubv1.ReasonAppNotFound,
-					Message: fmt.Sprintf("App %s not found", nn),
-				},
-				RequeueAfter: appRefRetryInterval,
-			}
+			return failResolution(githubv1.ReasonAppNotFound, fmt.Sprintf("App %s not found", nn))
 		}
-		return appResolution{
-			FailCondition: &metav1.Condition{
-				Type:    githubv1.ConditionTypeReady,
-				Status:  metav1.ConditionFalse,
-				Reason:  githubv1.ReasonSetupFailed,
-				Message: fmt.Sprintf("fetch App %s: %v", nn, err),
-			},
-			RequeueAfter: appRefRetryInterval,
-		}
+		return failResolution(githubv1.ReasonSetupFailed, fmt.Sprintf("fetch App %s: %v", nn, err))
 	}
 
 	if !meta.IsStatusConditionTrue(app.Status.Conditions, githubv1.ConditionTypeReady) {
-		return appResolution{
-			FailCondition: &metav1.Condition{
-				Type:    githubv1.ConditionTypeReady,
-				Status:  metav1.ConditionFalse,
-				Reason:  githubv1.ReasonAppNotReady,
-				Message: fmt.Sprintf("App %s is not Ready", nn),
-			},
-			RequeueAfter: appRefRetryInterval,
-		}
+		return failResolution(githubv1.ReasonAppNotReady, fmt.Sprintf("App %s is not Ready", nn))
 	}
 
 	key := ghapp.Key{Namespace: app.Namespace, Name: app.Name}
 	cli, ok := reg.Lookup(key)
 	if !ok {
-		return appResolution{
-			FailCondition: &metav1.Condition{
-				Type:    githubv1.ConditionTypeReady,
-				Status:  metav1.ConditionFalse,
-				Reason:  githubv1.ReasonAppNotReady,
-				Message: fmt.Sprintf("App %s client not yet cached", nn),
-			},
-			RequeueAfter: appRefRetryInterval,
-		}
+		return failResolution(githubv1.ReasonAppNotReady, fmt.Sprintf("App %s client not yet cached", nn))
 	}
 	return appResolution{Client: cli}
 }

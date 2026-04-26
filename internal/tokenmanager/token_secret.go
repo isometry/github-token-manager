@@ -33,7 +33,7 @@ type tokenSecret struct {
 	log            logr.Logger
 	reconciler     tokenReconciler
 	key            types.NamespacedName
-	owner          tokenManager
+	owner          TokenManager
 	controllerName string
 	ghait          ghait.GHAIT
 	metrics        *metrics.Recorder
@@ -66,7 +66,7 @@ func WithMetrics(m *metrics.Recorder) Option {
 	}
 }
 
-func NewTokenSecret(ctx context.Context, key types.NamespacedName, owner tokenManager, controllerName string, options ...Option) (*tokenSecret, error) {
+func NewTokenSecret(ctx context.Context, key types.NamespacedName, owner TokenManager, controllerName string, options ...Option) (*tokenSecret, error) {
 	s := &tokenSecret{
 		ctx:            ctx,
 		key:            key,
@@ -264,27 +264,18 @@ func (s *tokenSecret) CreateSecret() error {
 		return err
 	}
 
-	condition := metav1.Condition{
-		Type:    githubv1.ConditionTypeReady,
-		Status:  metav1.ConditionFalse,
-		Reason:  "Creating",
-		Message: "Creating Secret",
-	}
-
-	if err := s.UpdateTokenStatus(s.withCondition(condition)); err != nil {
-		log.Error(err, "failed to update token status", "condition", condition)
-		return err
-	}
-
 	if err := s.reconciler.Create(s.ctx, s.Secret); err != nil {
 		log.Error(err, "failed to create secret")
 		s.metrics.RecordSecretOperation(s.ctx, s.controllerName, metrics.OperationCreate, metrics.ResultError)
 		return err
 	}
 
-	condition.Status = metav1.ConditionTrue
-	condition.Reason = "Created"
-	condition.Message = "Created Secret"
+	condition := metav1.Condition{
+		Type:    githubv1.ConditionTypeReady,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Created",
+		Message: "Created Secret",
+	}
 
 	options := []tokenStatusOptions{
 		s.withCondition(condition),
@@ -312,27 +303,18 @@ func (s *tokenSecret) UpdateSecret() error {
 
 	s.Data = s.SecretData(installationToken.GetToken())
 
-	condition := metav1.Condition{
-		Type:    githubv1.ConditionTypeReady,
-		Status:  metav1.ConditionUnknown,
-		Reason:  "Updating",
-		Message: "Updating Secret",
-	}
-
-	if err := s.UpdateTokenStatus(s.withCondition(condition)); err != nil {
-		log.Error(err, "failed to update token status")
-		return err
-	}
-
 	if err := s.reconciler.Update(s.ctx, s.Secret); err != nil {
 		log.Error(err, "failed to update secret")
 		s.metrics.RecordSecretOperation(s.ctx, s.controllerName, metrics.OperationUpdate, metrics.ResultError)
 		return err
 	}
 
-	condition.Status = metav1.ConditionTrue
-	condition.Reason = "Updated"
-	condition.Message = "Updated Secret"
+	condition := metav1.Condition{
+		Type:    githubv1.ConditionTypeReady,
+		Status:  metav1.ConditionTrue,
+		Reason:  "Updated",
+		Message: "Updated Secret",
+	}
 
 	options := []tokenStatusOptions{
 		s.withCondition(condition),
@@ -349,18 +331,6 @@ func (s *tokenSecret) UpdateSecret() error {
 
 func (s *tokenSecret) DeleteSecret(key types.NamespacedName) error {
 	log := s.log.WithValues("func", "DeleteSecret")
-
-	condition := metav1.Condition{
-		Type:    githubv1.ConditionTypeReady,
-		Status:  metav1.ConditionFalse,
-		Reason:  "Reconciling",
-		Message: "Deleting old Secret",
-	}
-
-	if err := s.UpdateTokenStatus(s.withCondition(condition)); err != nil {
-		log.Error(err, "failed to update token status")
-		return err
-	}
 
 	secret := &corev1.Secret{}
 	if err := s.reconciler.Get(s.ctx, key, secret); err != nil {
@@ -388,8 +358,12 @@ func (s *tokenSecret) DeleteSecret(key types.NamespacedName) error {
 	s.metrics.RecordSecretOperation(s.ctx, s.controllerName, metrics.OperationDelete, metrics.ResultSuccess)
 	s.metrics.RemoveTokenActive(s.ctx, s.controllerName, s.key.String())
 
-	condition.Message = "Deleted old Secret"
-
+	condition := metav1.Condition{
+		Type:    githubv1.ConditionTypeReady,
+		Status:  metav1.ConditionFalse,
+		Reason:  "Reconciling",
+		Message: "Deleted old Secret",
+	}
 	if err := s.UpdateTokenStatus(s.withCondition(condition)); err != nil {
 		log.Error(err, "failed to update token status")
 		return err

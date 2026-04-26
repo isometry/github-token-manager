@@ -264,7 +264,7 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 			}
 
 			By("creating a Token resource with basicAuth=false")
-			Expect(clientCtx.createToken(testToken1, targetNamespace, testSecret1, false, tokenRefreshInterval)).To(Succeed())
+			Expect(clientCtx.createToken(testToken1, targetNamespace, testSecret1, "", false, tokenRefreshInterval)).To(Succeed())
 
 			By("waiting for Token reconciliation")
 			clientCtx.waitForTokenReconciliation(testToken1, targetNamespace)
@@ -296,7 +296,7 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 			}
 
 			By("creating a Token resource with basicAuth=true")
-			Expect(clientCtx.createToken(testToken2, targetNamespace, testSecret2, true, tokenRefreshInterval)).To(Succeed())
+			Expect(clientCtx.createToken(testToken2, targetNamespace, testSecret2, "", true, tokenRefreshInterval)).To(Succeed())
 
 			By("waiting for Token reconciliation")
 			clientCtx.waitForTokenReconciliation(testToken2, targetNamespace)
@@ -438,7 +438,7 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 			}
 
 			By("creating a Token with spec.appRef pointing at the App")
-			Expect(clientCtx.createTokenWithAppRef(
+			Expect(clientCtx.createToken(
 				testToken3, targetNamespace, testSecret5, testApp,
 				false, tokenRefreshInterval,
 			)).To(Succeed())
