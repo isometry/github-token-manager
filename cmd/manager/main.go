@@ -266,19 +266,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.TokenReconciler{
+	tokenBase := controller.TokenReconcilerBase{
 		Client:   mgr.GetClient(),
 		Metrics:  metricsRecorder,
 		Registry: registry,
-	}).SetupWithManager(mgr); err != nil {
+	}
+	if err = (&controller.TokenReconciler{TokenReconcilerBase: tokenBase}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "Token")
 		os.Exit(1)
 	}
-	if err = (&controller.ClusterTokenReconciler{
-		Client:   mgr.GetClient(),
-		Metrics:  metricsRecorder,
-		Registry: registry,
-	}).SetupWithManager(mgr); err != nil {
+	if err = (&controller.ClusterTokenReconciler{TokenReconcilerBase: tokenBase}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ClusterToken")
 		os.Exit(1)
 	}

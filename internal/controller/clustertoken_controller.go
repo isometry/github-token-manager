@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,16 +29,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
-	"github.com/isometry/github-token-manager/internal/ghapp"
-	"github.com/isometry/github-token-manager/internal/metrics"
-	tm "github.com/isometry/github-token-manager/internal/tokenmanager"
 )
 
-// ClusterTokenReconciler reconciles a ClusterToken object
+// ClusterTokenReconciler reconciles a ClusterToken object.
 type ClusterTokenReconciler struct {
-	client.Client
-	Metrics  *metrics.Recorder
-	Registry *ghapp.Registry
+	TokenReconcilerBase
 }
 
 // +kubebuilder:rbac:groups=github.as-code.io,resources=clustertokens,verbs=get;list;watch
@@ -53,59 +47,8 @@ type ClusterTokenReconciler struct {
 //
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/reconcile
-func (r *ClusterTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
-	logger := log.FromContext(ctx)
-	logger.V(1).Info("reconcile start")
-
-	token := &githubv1.ClusterToken{}
-	if err := r.Get(ctx, req.NamespacedName, token); err != nil {
-		if apierrors.IsNotFound(err) {
-			return ctrl.Result{}, nil
-		}
-		return ctrl.Result{}, err
-	}
-
-	resolution := resolveApp(ctx, r.Client, r.Registry, token.GetAppRef())
-	if resolution.FailCondition != nil {
-		r.Metrics.RecordConfigError(ctx, "github-clustertoken", "ghapp")
-		logger.Info("App reference unavailable",
-			"reason", resolution.FailCondition.Reason,
-			"message", resolution.FailCondition.Message,
-		)
-		if token.SetStatusCondition(*resolution.FailCondition) {
-			if err := r.Status().Update(ctx, token); err != nil {
-				logger.Error(err, "failed to update ClusterToken status with AppRef failure")
-				return ctrl.Result{}, err
-			}
-		}
-		return ctrl.Result{RequeueAfter: resolution.RequeueAfter}, nil
-	}
-
-	options := []tm.Option{
-		tm.WithReconciler(r),
-		tm.WithGHApp(resolution.Client),
-		tm.WithLogger(logger),
-		tm.WithMetrics(r.Metrics),
-	}
-
-	tokenSecret, err := tm.NewTokenSecret(ctx, req.NamespacedName, token, "github-clustertoken", options...)
-	if err != nil {
-		logger.Error(err, "failed to create ClusterToken reconciler")
-		return ctrl.Result{}, err
-	}
-
-	if tokenSecret == nil {
-		logger.Info("ClusterToken not found, skipping reconciliation")
-		return ctrl.Result{}, nil
-	}
-
-	result, err = tokenSecret.Reconcile()
-	if err != nil {
-		logger.Error(err, "failed to reconcile ClusterToken")
-		return result, err
-	}
-	logger.Info("reconciled", "requeueAfter", result.RequeueAfter)
-	return result, nil
+func (r *ClusterTokenReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	return reconcileTokenLike[githubv1.ClusterToken](ctx, &r.TokenReconcilerBase, req, ControllerNameClusterToken)
 }
 
 // mapAppToClusterTokens enqueues every ClusterToken whose spec.appRef
@@ -133,11 +76,11 @@ func (r *ClusterTokenReconciler) mapAppToClusterTokens(ctx context.Context, obj 
 func (r *ClusterTokenReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&githubv1.ClusterToken{}, builder.WithPredicates(predicate.GenerationChangedPredicate{})).
-		Named("github-clustertoken").
+		Named(ControllerNameClusterToken).
 		Watches(&githubv1.App{},
 			handler.EnqueueRequestsFromMapFunc(r.mapAppToClusterTokens),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
 		).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).
 		Complete(r)
 }

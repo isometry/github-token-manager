@@ -46,9 +46,8 @@ func TestRegistry_Startup_NoConfig(t *testing.T) {
 
 func TestRegistry_Startup_CachesAcrossCalls(t *testing.T) {
 	cfg := &OperatorConfig{AppID: 1, InstallationID: 2, Provider: "file", Key: "inline"}
-	r := NewRegistry("gtm-system", cfg)
 	fac, calls := countingFactory()
-	r.SetFactory(fac)
+	r := NewRegistry("gtm-system", cfg, WithFactory(fac))
 
 	c1, err := r.Startup(context.Background())
 	if err != nil {
@@ -67,9 +66,8 @@ func TestRegistry_Startup_CachesAcrossCalls(t *testing.T) {
 }
 
 func TestRegistry_ForApp_CachesByVersion(t *testing.T) {
-	r := NewRegistry("gtm-system", nil)
 	fac, calls := countingFactory()
-	r.SetFactory(fac)
+	r := NewRegistry("gtm-system", nil, WithFactory(fac))
 
 	key := Key{Namespace: "team-a", Name: "prod"}
 	cfg := &OperatorConfig{AppID: 42, InstallationID: 7, Provider: "file", Key: "inline"}
@@ -108,9 +106,8 @@ func TestRegistry_ForApp_RejectsStartupKey(t *testing.T) {
 }
 
 func TestRegistry_Invalidate_EvictsEntry(t *testing.T) {
-	r := NewRegistry("gtm-system", nil)
 	fac, calls := countingFactory()
-	r.SetFactory(fac)
+	r := NewRegistry("gtm-system", nil, WithFactory(fac))
 
 	key := Key{Namespace: "team-a", Name: "prod"}
 	cfg := &OperatorConfig{AppID: 42, Provider: "file", Key: "inline"}
@@ -129,11 +126,13 @@ func TestRegistry_Invalidate_EvictsEntry(t *testing.T) {
 }
 
 func TestRegistry_FactoryError_Propagates(t *testing.T) {
-	r := NewRegistry("gtm-system", &OperatorConfig{AppID: 1, Provider: "file", Key: "inline"})
 	sentinel := errors.New("provider init failed")
-	r.SetFactory(func(context.Context, ghait.Config) (ghait.GHAIT, error) {
-		return nil, sentinel
-	})
+	r := NewRegistry("gtm-system",
+		&OperatorConfig{AppID: 1, Provider: "file", Key: "inline"},
+		WithFactory(func(context.Context, ghait.Config) (ghait.GHAIT, error) {
+			return nil, sentinel
+		}),
+	)
 	_, err := r.Startup(context.Background())
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("err = %v, want to wrap %v", err, sentinel)

@@ -65,22 +65,29 @@ type Registry struct {
 	factory    FactoryFunc
 }
 
+// Option configures a [Registry] at construction time.
+type Option func(*Registry)
+
+// WithFactory replaces the default client factory. Intended for tests.
+func WithFactory(f FactoryFunc) Option {
+	return func(r *Registry) {
+		r.factory = f
+	}
+}
+
 // NewRegistry builds a Registry. Pass a nil startupCfg to require that every
 // Token/ClusterToken sets spec.appRef explicitly.
-func NewRegistry(operatorNS string, startupCfg *OperatorConfig) *Registry {
-	return &Registry{
+func NewRegistry(operatorNS string, startupCfg *OperatorConfig, opts ...Option) *Registry {
+	r := &Registry{
 		clients:    make(map[Key]cachedClient),
 		startupCfg: startupCfg,
 		operatorNS: operatorNS,
 		factory:    defaultFactory,
 	}
-}
-
-// SetFactory replaces the internal client factory. Intended for tests.
-func (r *Registry) SetFactory(f FactoryFunc) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.factory = f
+	for _, opt := range opts {
+		opt(r)
+	}
+	return r
 }
 
 // OperatorNamespace returns the operator's own namespace, used to default an

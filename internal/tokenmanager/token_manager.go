@@ -14,8 +14,8 @@ type tokenReconciler interface {
 	client.Client
 }
 
-// tokenManager provides a common interface for both namespaced Tokens and ClusterTokens
-type tokenManager interface {
+// TokenManager provides a common interface for both namespaced Tokens and ClusterTokens.
+type TokenManager interface {
 	client.Object
 
 	GetType() string

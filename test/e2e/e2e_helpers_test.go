@@ -211,47 +211,31 @@ func (c *clientContext) deleteNamespace(name string) error {
 	return c.client.Delete(c.context, ns)
 }
 
-// createToken creates a standard Token resource for testing
+// createToken creates a Token resource. An empty appRefName uses the
+// operator's startup configuration; otherwise the Token resolves its GitHub
+// App credentials via spec.appRef.
 func (c *clientContext) createToken(
-	name, namespace, secretName string,
-	isBasicAuth bool,
-	refreshInterval time.Duration,
-) error {
-	token := &gtmv1.Token{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "github.as-code.io/v1",
-			Kind:       "Token",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: namespace,
-		},
-		Spec: gtmv1.TokenSpec{
-			RefreshInterval: metav1.Duration{Duration: refreshInterval},
-			Secret: gtmv1.TokenSecretSpec{
-				Name:      secretName,
-				BasicAuth: isBasicAuth,
-			},
-			Repositories: []string{
-				testRepositoryName,
-			},
-			Permissions: &gtmv1.Permissions{
-				Contents: &readPermission,
-				Metadata: &readPermission,
-			},
-		},
-	}
-
-	return c.client.Create(c.context, token)
-}
-
-// createTokenWithAppRef creates a Token that resolves its GitHub App credentials
-// via spec.appRef rather than the operator's startup configuration.
-func (c *clientContext) createTokenWithAppRef(
 	name, namespace, secretName, appRefName string,
 	isBasicAuth bool,
 	refreshInterval time.Duration,
 ) error {
+	spec := gtmv1.TokenSpec{
+		RefreshInterval: metav1.Duration{Duration: refreshInterval},
+		Secret: gtmv1.TokenSecretSpec{
+			Name:      secretName,
+			BasicAuth: isBasicAuth,
+		},
+		Repositories: []string{
+			testRepositoryName,
+		},
+		Permissions: &gtmv1.Permissions{
+			Contents: &readPermission,
+			Metadata: &readPermission,
+		},
+	}
+	if appRefName != "" {
+		spec.AppRef = &gtmv1.LocalAppReference{Name: appRefName}
+	}
 	token := &gtmv1.Token{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "github.as-code.io/v1",
@@ -261,21 +245,7 @@ func (c *clientContext) createTokenWithAppRef(
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: gtmv1.TokenSpec{
-			AppRef:          &gtmv1.LocalAppReference{Name: appRefName},
-			RefreshInterval: metav1.Duration{Duration: refreshInterval},
-			Secret: gtmv1.TokenSecretSpec{
-				Name:      secretName,
-				BasicAuth: isBasicAuth,
-			},
-			Repositories: []string{
-				testRepositoryName,
-			},
-			Permissions: &gtmv1.Permissions{
-				Contents: &readPermission,
-				Metadata: &readPermission,
-			},
-		},
+		Spec: spec,
 	}
 
 	return c.client.Create(c.context, token)
