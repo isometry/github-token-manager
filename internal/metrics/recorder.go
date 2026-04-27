@@ -36,12 +36,12 @@ type Recorder struct {
 	tokenRefresh         metric.Int64Counter
 	tokenRefreshDuration metric.Float64Histogram
 	githubAPIDuration    metric.Float64Histogram
+	githubAPIRequests    metric.Int64Counter
 	tokenExpiry          metric.Float64Gauge
 	reconcileErrors      metric.Int64Counter
 	tokensActive         metric.Int64UpDownCounter
 	secretOperations     metric.Int64Counter
 	configErrors         metric.Int64Counter
-	githubTokenRequests  metric.Int64Counter
 
 	activeTokens sync.Map
 }
@@ -59,65 +59,65 @@ func newRecorder(meter metric.Meter) (*Recorder, error) {
 	var r Recorder
 	var err error
 
-	if r.tokenRefresh, err = meter.Int64Counter("gtm.token.refresh",
+	if r.tokenRefresh, err = meter.Int64Counter("token.refresh",
 		metric.WithUnit("{refresh}"),
 		metric.WithDescription("Total number of token refresh operations"),
 	); err != nil {
 		return nil, err
 	}
 
-	if r.tokenRefreshDuration, err = meter.Float64Histogram("gtm.token.refresh.duration",
+	if r.tokenRefreshDuration, err = meter.Float64Histogram("token.refresh.duration",
 		metric.WithUnit("s"),
 		metric.WithDescription("Duration of token refresh operations"),
 	); err != nil {
 		return nil, err
 	}
 
-	if r.githubAPIDuration, err = meter.Float64Histogram("gtm.github.api_call.duration",
+	if r.githubAPIDuration, err = meter.Float64Histogram("github.api.call.duration",
 		metric.WithUnit("s"),
 		metric.WithDescription("Duration of GitHub API calls"),
 	); err != nil {
 		return nil, err
 	}
 
-	if r.tokenExpiry, err = meter.Float64Gauge("gtm.token.expiry.timestamp",
+	if r.githubAPIRequests, err = meter.Int64Counter("github.api.requests",
+		metric.WithUnit("{request}"),
+		metric.WithDescription("Total number of GitHub API requests"),
+	); err != nil {
+		return nil, err
+	}
+
+	if r.tokenExpiry, err = meter.Float64Gauge("token.expiry.timestamp",
 		metric.WithUnit("s"),
 		metric.WithDescription("Unix timestamp when the token expires"),
 	); err != nil {
 		return nil, err
 	}
 
-	if r.reconcileErrors, err = meter.Int64Counter("gtm.reconcile.errors",
+	if r.reconcileErrors, err = meter.Int64Counter("token.reconcile.errors",
 		metric.WithUnit("{error}"),
-		metric.WithDescription("Total number of reconciliation errors"),
+		metric.WithDescription("Total number of token-reconcile errors (by reason)"),
 	); err != nil {
 		return nil, err
 	}
 
-	if r.tokensActive, err = meter.Int64UpDownCounter("gtm.tokens.active",
+	if r.tokensActive, err = meter.Int64UpDownCounter("tokens.active",
 		metric.WithUnit("{token}"),
 		metric.WithDescription("Number of currently active tokens"),
 	); err != nil {
 		return nil, err
 	}
 
-	if r.secretOperations, err = meter.Int64Counter("gtm.secret.operations",
+	if r.secretOperations, err = meter.Int64Counter("kubernetes.secret.operations",
 		metric.WithUnit("{operation}"),
-		metric.WithDescription("Total number of secret operations"),
+		metric.WithDescription("Total number of Kubernetes Secret operations performed by the operator"),
 	); err != nil {
 		return nil, err
 	}
 
-	if r.configErrors, err = meter.Int64Counter("gtm.config.errors",
+	if r.configErrors, err = meter.Int64Counter("config.errors",
 		metric.WithUnit("{error}"),
 		metric.WithDescription("Total number of configuration errors"),
-	); err != nil {
-		return nil, err
-	}
-
-	if r.githubTokenRequests, err = meter.Int64Counter("gtm.github.token.requests",
-		metric.WithUnit("{request}"),
-		metric.WithDescription("Total GitHub Installation Access Token requests"),
 	); err != nil {
 		return nil, err
 	}
@@ -151,8 +151,9 @@ func (r *Recorder) RecordTokenRefreshDuration(ctx context.Context, controllerNam
 	)
 }
 
-// RecordGitHubAPIDuration records the duration of a GitHub API call.
-func (r *Recorder) RecordGitHubAPIDuration(ctx context.Context, d time.Duration, err error) {
+// RecordGitHubAPICall records a completed GitHub API call: increments the
+// requests counter and observes the duration histogram with the same attributes.
+func (r *Recorder) RecordGitHubAPICall(ctx context.Context, controllerName string, d time.Duration, err error) {
 	if r == nil {
 		return
 	}
@@ -160,11 +161,12 @@ func (r *Recorder) RecordGitHubAPIDuration(ctx context.Context, d time.Duration,
 	if err != nil {
 		result = ResultError
 	}
-	r.githubAPIDuration.Record(ctx, d.Seconds(),
-		metric.WithAttributes(
-			attribute.String("result", result),
-		),
+	attrs := metric.WithAttributes(
+		attribute.String("controller", controllerName),
+		attribute.String("result", result),
 	)
+	r.githubAPIRequests.Add(ctx, 1, attrs)
+	r.githubAPIDuration.Record(ctx, d.Seconds(), attrs)
 }
 
 // RecordTokenExpiry records the expiry timestamp for a token.
@@ -227,7 +229,7 @@ func (r *Recorder) RemoveTokenActive(ctx context.Context, controllerName, tokenK
 	)
 }
 
-// RecordSecretOperation records a secret create/update/delete operation.
+// RecordSecretOperation records a Kubernetes Secret create/update/delete operation.
 func (r *Recorder) RecordSecretOperation(ctx context.Context, controllerName, operation, result string) {
 	if r == nil {
 		return
@@ -241,30 +243,16 @@ func (r *Recorder) RecordSecretOperation(ctx context.Context, controllerName, op
 	)
 }
 
-// RecordConfigError records a configuration loading error.
-func (r *Recorder) RecordConfigError(ctx context.Context, source string) {
+// RecordConfigError records a configuration loading error. source identifies the
+// subsystem that failed (e.g. "ghapp", "app").
+func (r *Recorder) RecordConfigError(ctx context.Context, controllerName, source string) {
 	if r == nil {
 		return
 	}
 	r.configErrors.Add(ctx, 1,
 		metric.WithAttributes(
+			attribute.String("controller", controllerName),
 			attribute.String("source", source),
-		),
-	)
-}
-
-// RecordGitHubTokenRequest records a GitHub Installation Access Token request.
-func (r *Recorder) RecordGitHubTokenRequest(ctx context.Context, err error) {
-	if r == nil {
-		return
-	}
-	result := ResultSuccess
-	if err != nil {
-		result = ResultError
-	}
-	r.githubTokenRequests.Add(ctx, 1,
-		metric.WithAttributes(
-			attribute.String("result", result),
 		),
 	)
 }

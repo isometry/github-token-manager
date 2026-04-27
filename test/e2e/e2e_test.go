@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,22 +62,45 @@ const (
 	// Resource names
 	testToken1        = "token-1"
 	testToken2        = "token-2"
+	testToken3        = "token-3"
 	testClusterToken1 = "cluster-token-1"
 	testClusterToken2 = "cluster-token-2"
+	testApp           = "test-app"
 
 	// Secret names
 	testSecret1 = "secret-1"
 	testSecret2 = "secret-2"
 	testSecret3 = "secret-3"
 	testSecret4 = "secret-4"
+	testSecret5 = "secret-5"
+
+	testAppKeySecret = "test-app-key"
 )
+
+// gtmConfig holds the GitHub App credentials captured from the Helm install
+// step so that later specs (notably the App CR test) can reuse them without
+// re-parsing env vars or values files.
+type gtmConfig struct {
+	appID          int64
+	installationID int64
+	provider       string
+	key            string
+}
 
 // Permission strings (var to allow taking address)
 var readPermission = "read"
 
+// e2ePreserveState reports whether E2E_PRESERVE is set in the environment.
+// When true, the suite skips the uninstall spec and the namespace teardown in
+// AfterAll so that a developer can inspect cluster state after a run.
+func e2ePreserveState() bool {
+	return os.Getenv("E2E_PRESERVE") != ""
+}
+
 var _ = Describe("GitHub Token Manager", Ordered, func() {
 	var kubeContext, testImage, testRepo, testTag string
 	var hasAppCredentials bool
+	var capturedConfig *gtmConfig
 	var k8sClient client.Client
 	ctx := context.Background()
 	var clientCtx *clientContext
@@ -142,6 +166,8 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 				"helm", "upgrade", "--install", "github-token-manager", chartPath,
 				"--namespace", operatorNamespace,
 				"--create-namespace",
+				"--timeout=60s",
+				"--wait=watcher",
 				fmt.Sprintf("--set=manager.repository=%s", testRepo),
 				fmt.Sprintf("--set=manager.tag=%s", testTag),
 			}
@@ -157,12 +183,26 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 			if _, err := os.Stat(valuesPath); err == nil {
 				hasAppCredentials = true
 				GinkgoWriter.Printf("Using GitHub App configuration values from %q\n", valuesPath)
+				cfg, err := parseHelmValuesFile(valuesPath)
+				Expect(err).NotTo(HaveOccurred())
+				capturedConfig = cfg
 				valuesArgs = append(valuesArgs,
 					fmt.Sprintf("--values=%s", valuesPath),
 				)
 			} else if gtmAppId != "" && gtmInstallationId != "" && gtmKey != "" {
 				hasAppCredentials = true
 				GinkgoWriter.Println("Using GitHub App credentials from the environment")
+
+				appID, err := strconv.ParseInt(gtmAppId, 10, 64)
+				Expect(err).NotTo(HaveOccurred(), "parsing GTM_APP_ID")
+				installationID, err := strconv.ParseInt(gtmInstallationId, 10, 64)
+				Expect(err).NotTo(HaveOccurred(), "parsing GTM_INSTALLATION_ID")
+				capturedConfig = &gtmConfig{
+					appID:          appID,
+					installationID: installationID,
+					provider:       gtmProvider,
+					key:            gtmKey,
+				}
 
 				// Create temporary values file from environment variables
 				envValuesPath := filepath.Join(projectDir, "test", "e2e", "values.env.yaml")
@@ -224,7 +264,7 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 			}
 
 			By("creating a Token resource with basicAuth=false")
-			Expect(clientCtx.createToken(testToken1, targetNamespace, testSecret1, false, tokenRefreshInterval)).To(Succeed())
+			Expect(clientCtx.createToken(testToken1, targetNamespace, testSecret1, "", false, tokenRefreshInterval)).To(Succeed())
 
 			By("waiting for Token reconciliation")
 			clientCtx.waitForTokenReconciliation(testToken1, targetNamespace)
@@ -256,7 +296,7 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 			}
 
 			By("creating a Token resource with basicAuth=true")
-			Expect(clientCtx.createToken(testToken2, targetNamespace, testSecret2, true, tokenRefreshInterval)).To(Succeed())
+			Expect(clientCtx.createToken(testToken2, targetNamespace, testSecret2, "", true, tokenRefreshInterval)).To(Succeed())
 
 			By("waiting for Token reconciliation")
 			clientCtx.waitForTokenReconciliation(testToken2, targetNamespace)
@@ -361,6 +401,62 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 		})
 	})
 
+	Context("App CR", Ordered, func() {
+		AfterAll(func() {
+			if !hasAppCredentials {
+				return
+			}
+			_ = clientCtx.deleteApp(testApp, targetNamespace)
+			_ = clientCtx.deleteSecret(testAppKeySecret, targetNamespace)
+		})
+
+		It("reconciles an App resource to Ready=True", func() {
+			if !hasAppCredentials {
+				Skip("skipping App test - no valid GitHub App configuration provided")
+			}
+
+			By("creating a Secret holding the GitHub App private key")
+			Expect(clientCtx.createOpaqueSecret(testAppKeySecret, targetNamespace, map[string][]byte{
+				"private-key.pem": []byte(capturedConfig.key),
+			})).To(Succeed())
+
+			By("creating a Secret-backed App resource referencing it")
+			Expect(clientCtx.createApp(testApp, targetNamespace, gtmv1.AppSpec{
+				AppID:          capturedConfig.appID,
+				InstallationID: capturedConfig.installationID,
+				Provider:       "secret",
+				KeyRef:         &gtmv1.KeySecretReference{Name: testAppKeySecret},
+			})).To(Succeed())
+
+			By("waiting for App reconciliation")
+			clientCtx.waitForAppReconciliation(testApp, targetNamespace)
+		})
+
+		It("manages a Token that references the App via spec.appRef", func() {
+			if !hasAppCredentials {
+				Skip("skipping App test - no valid GitHub App configuration provided")
+			}
+
+			By("creating a Token with spec.appRef pointing at the App")
+			Expect(clientCtx.createToken(
+				testToken3, targetNamespace, testSecret5, testApp,
+				false, tokenRefreshInterval,
+			)).To(Succeed())
+
+			By("waiting for Token reconciliation")
+			clientCtx.waitForTokenReconciliation(testToken3, targetNamespace)
+
+			By("checking managed Secret is created correctly")
+			initialSecretToken := clientCtx.checkManagedSecret(testSecret5, targetNamespace, tokenmanager.SecretTypeToken)
+
+			By("checking that the managed Secret token value is valid")
+			Expect(checkToken(initialSecretToken)).To(Succeed())
+
+			By("deleting the Token resource")
+			Expect(clientCtx.deleteToken(testToken3, targetNamespace)).To(Succeed())
+		})
+	})
+
 	Context("Metrics", func() {
 		var metricsBody string
 
@@ -375,54 +471,111 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 			metricsBody = scrapeMetrics(operatorNamespace, podName, 8080)
 		})
 
-		It("exposes Prometheus metrics on the /metrics endpoint", func() {
-			By("checking for standard Go runtime metric")
+		It("serves /metrics with OTEL-identified, scope-pruned payload", func() {
+			By("endpoint-up smoke check")
 			Expect(metricsBody).To(ContainSubstring("go_goroutines"))
 
-			if hasAppCredentials {
-				By("checking for custom GTM metric TYPE lines (requires successful reconciliation)")
-				expectedTypes := []string{
-					"gtm_token_refresh_total",
-					"gtm_token_refresh_duration_seconds",
-					"gtm_github_api_call_duration_seconds",
-					"gtm_token_expiry_timestamp_seconds",
-					"gtm_tokens_active",
-					"gtm_secret_operations_total",
-					"gtm_github_token_requests_total",
-				}
-				for _, metric := range expectedTypes {
-					Expect(metricsBody).To(
-						ContainSubstring(fmt.Sprintf("# TYPE %s ", metric)),
-						"missing TYPE line for %s", metric,
-					)
-				}
+			By("target_info carries OTEL Resource identity")
+			Expect(metricsBody).To(
+				MatchRegexp(`target_info\{[^}]*service_name="github-token-manager"[^}]*\}`),
+				"target_info missing service_name=github-token-manager",
+			)
+			Expect(metricsBody).To(
+				MatchRegexp(`target_info\{[^}]*service_version="[^"]+"[^}]*\}`),
+				"target_info missing non-empty service_version",
+			)
+			Expect(metricsBody).To(
+				MatchRegexp(`target_info\{[^}]*service_instance_id="[^"]+"[^}]*\}`),
+				"target_info missing non-empty service_instance_id",
+			)
+
+			By("otel_scope_* labels have been stripped")
+			Expect(metricsBody).NotTo(ContainSubstring("otel_scope_"))
+
+			By("no metric family starts with the retired gtm_ prefix")
+			Expect(metricsBody).NotTo(
+				MatchRegexp(`(?m)^gtm_`),
+				"found residual gtm_-prefixed metric family",
+			)
+
+			By("controller-runtime defaults carry the expected controller labels")
+			Expect(metricsBody).To(
+				MatchRegexp(`controller_runtime_reconcile_total\{[^}]*controller="github-token"[^}]*\}`),
+			)
+			Expect(metricsBody).To(
+				MatchRegexp(`controller_runtime_reconcile_total\{[^}]*controller="github-clustertoken"[^}]*\}`),
+			)
+			Expect(metricsBody).To(
+				MatchRegexp(`workqueue_adds_total\{[^}]*controller="github-token"[^}]*\}`),
+			)
+			Expect(metricsBody).To(
+				MatchRegexp(`workqueue_adds_total\{[^}]*controller="github-clustertoken"[^}]*\}`),
+			)
+		})
+
+		It("exposes custom Prometheus metric TYPE lines after reconciliation", func() {
+			if !hasAppCredentials {
+				Skip("skipping custom metric checks - no valid GitHub App configuration provided")
+			}
+
+			// Only the happy-path instruments are asserted. The OTEL Prometheus
+			// exporter only emits a `# TYPE` line once an instrument has recorded
+			// at least one data point, so error-only counters (token_reconcile_errors_total,
+			// config_errors_total) are intentionally excluded from this list.
+			expectedTypes := []string{
+				"token_refresh_total",
+				"token_refresh_duration_seconds",
+				"github_api_call_duration_seconds",
+				"github_api_requests_total",
+				"token_expiry_timestamp_seconds",
+				"tokens_active",
+				"kubernetes_secret_operations_total",
+			}
+			for _, metric := range expectedTypes {
+				Expect(metricsBody).To(
+					ContainSubstring(fmt.Sprintf("# TYPE %s ", metric)),
+					"missing TYPE line for %s", metric,
+				)
 			}
 		})
 
-		It("reports non-zero token counters after reconciliation", func() {
+		It("reports non-zero success counters after reconciliation", func() {
 			if !hasAppCredentials {
 				Skip("skipping metrics counter checks - no valid GitHub App configuration provided")
 			}
 
-			By("checking gtm_token_refresh_total has success count >= 1")
+			By("checking token_refresh_total{controller=github-token,result=success} >= 1")
 			Expect(metricsBody).To(
-				MatchRegexp(`gtm_token_refresh_total\{[^}]*result="success"[^}]*\}\s+[1-9]`),
+				MatchRegexp(`token_refresh_total\{[^}]*controller="github-token"[^}]*result="success"[^}]*\}\s+[1-9]`),
 			)
 
-			By("checking gtm_github_token_requests_total has success count >= 1")
+			By("checking kubernetes_secret_operations_total{controller=github-token,operation=create,result=success} >= 1")
 			Expect(metricsBody).To(
-				MatchRegexp(`gtm_github_token_requests_total\{[^}]*result="success"[^}]*\}\s+[1-9]`),
+				MatchRegexp(`kubernetes_secret_operations_total\{[^}]*controller="github-token"[^}]*operation="create"[^}]*result="success"[^}]*\}\s+[1-9]`),
 			)
 
-			By("checking gtm_secret_operations_total has success count >= 1")
+			By("checking github_api_call_duration_seconds_count{controller=github-token,result=success} >= 1")
 			Expect(metricsBody).To(
-				MatchRegexp(`gtm_secret_operations_total\{[^}]*result="success"[^}]*\}\s+[1-9]`),
+				MatchRegexp(`github_api_call_duration_seconds_count\{[^}]*controller="github-token"[^}]*result="success"[^}]*\}\s+[1-9]`),
+			)
+
+			By("checking github_api_requests_total{controller=github-token,result=success} >= 1")
+			Expect(metricsBody).To(
+				MatchRegexp(`github_api_requests_total\{[^}]*controller="github-token"[^}]*result="success"[^}]*\}\s+[1-9]`),
+			)
+
+			By("checking tokens_active{controller=github-token} >= 1")
+			Expect(metricsBody).To(
+				MatchRegexp(`tokens_active\{[^}]*controller="github-token"[^}]*\}\s+[1-9]`),
 			)
 		})
 	})
 
 	Context("Helm Chart", func() {
 		It("should uninstall without error", func() {
+			if e2ePreserveState() {
+				Skip("E2E_PRESERVE is set; leaving Helm release in place for inspection")
+			}
 			By("uninstalling Helm chart")
 			cmd := exec.Command("helm", "uninstall", "github-token-manager", "--namespace", operatorNamespace)
 			_, err := runCommand(cmd)
@@ -432,6 +585,10 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 	})
 
 	AfterAll(func() {
+		if e2ePreserveState() {
+			fmt.Fprintln(GinkgoWriter, "E2E_PRESERVE is set; skipping namespace teardown")
+			return
+		}
 		Expect(clientCtx.deleteNamespace(operatorNamespace)).To(Succeed())
 		Expect(clientCtx.deleteNamespace(targetNamespace)).To(Succeed())
 	})

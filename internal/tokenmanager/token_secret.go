@@ -29,21 +29,21 @@ const (
 )
 
 type tokenSecret struct {
-	ctx        context.Context
-	log        logr.Logger
-	reconciler tokenReconciler
-	key        types.NamespacedName
-	owner      tokenManager
-	ghait      ghait.GHAIT
-	metrics    *metrics.Recorder
+	log            logr.Logger
+	client         client.Client
+	key            types.NamespacedName
+	owner          TokenManager
+	controllerName string
+	ghait          ghait.GHAIT
+	metrics        *metrics.Recorder
 	*corev1.Secret
 }
 
 type Option func(*tokenSecret)
 
-func WithReconciler(reconciler tokenReconciler) Option {
+func WithClient(c client.Client) Option {
 	return func(s *tokenSecret) {
-		s.reconciler = reconciler
+		s.client = c
 	}
 }
 
@@ -65,83 +65,46 @@ func WithMetrics(m *metrics.Recorder) Option {
 	}
 }
 
-func NewTokenSecret(ctx context.Context, key types.NamespacedName, owner tokenManager, options ...Option) (*tokenSecret, error) {
+func NewTokenSecret(key types.NamespacedName, owner TokenManager, controllerName string, options ...Option) *tokenSecret {
 	s := &tokenSecret{
-		ctx:   ctx,
-		key:   key,
-		owner: owner,
+		key:            key,
+		owner:          owner,
+		controllerName: controllerName,
 	}
-
 	for _, option := range options {
 		option(s)
 	}
-
-	if err := s.RefreshOwner(); err != nil {
-		if apierrors.IsNotFound(err) {
-			// If the custom resource is not found then, it usually means that it was deleted or not created
-			// In this way, we will stop the reconciliation
-			s.log.Info("token resource not found; ignoring since object must be deleted")
-			s.metrics.RemoveTokenActive(s.ctx, s.owner.GetType(), s.key.String())
-			return nil, nil
-		}
-		// Error reading the object - requeue the request.
-		s.log.Error(err, "failed to get token")
-		return nil, err
-	}
-
-	// Initialize Token status conditions
-	if len(s.owner.GetStatusConditions()) == 0 {
-		s.log.Info("initializing token status conditions")
-
-		condition := metav1.Condition{
-			Type:    githubv1.ConditionTypeReady,
-			Status:  metav1.ConditionUnknown,
-			Reason:  "Reconciling",
-			Message: "Starting reconciliation",
-		}
-		if err := s.UpdateTokenStatus(s.withCondition(condition)); err != nil {
-			s.log.Error(err, "failed to update token status")
-			return nil, err
-		}
-	}
-
-	return s, nil
+	return s
 }
 
-func (s *tokenSecret) NewInstallationToken() (*github.InstallationToken, error) {
+func (s *tokenSecret) NewInstallationToken(ctx context.Context) (*github.InstallationToken, error) {
 	installationId := s.owner.GetInstallationID()
 	options := s.owner.GetInstallationTokenOptions()
 
 	start := time.Now()
-	token, err := s.ghait.NewInstallationToken(s.ctx, installationId, options)
-	s.metrics.RecordGitHubAPIDuration(s.ctx, time.Since(start), err)
-	s.metrics.RecordGitHubTokenRequest(s.ctx, err)
+	token, err := s.ghait.NewInstallationToken(ctx, installationId, options)
+	s.metrics.RecordGitHubAPICall(ctx, s.controllerName, time.Since(start), err)
 	return token, err
 }
 
-func (s *tokenSecret) RefreshOwner() error {
-	return s.reconciler.Get(s.ctx, s.key, s.owner)
+func (s *tokenSecret) RefreshOwner(ctx context.Context) error {
+	return s.client.Get(ctx, s.key, s.owner)
 }
 
-func (s *tokenSecret) controllerName() string {
-	return s.owner.GetType()
-}
-
-func (s *tokenSecret) recordExpiry() {
+func (s *tokenSecret) recordExpiry(ctx context.Context) {
 	_, expiresAt := s.owner.GetStatusTimestamps()
 	if !expiresAt.IsZero() {
-		s.metrics.RecordTokenExpiry(s.ctx, s.controllerName(), s.owner.GetSecretNamespace(), s.owner.GetName(), expiresAt)
+		s.metrics.RecordTokenExpiry(ctx, s.controllerName, s.owner.GetSecretNamespace(), s.owner.GetName(), expiresAt)
 	}
 }
 
-func (s *tokenSecret) Reconcile() (result reconcile.Result, err error) {
+func (s *tokenSecret) Reconcile(ctx context.Context) (result reconcile.Result, err error) {
 	log := s.log.WithValues("func", "Reconcile")
 
 	managedSecret := s.owner.GetManagedSecret()
 
 	if !managedSecret.IsUnset() && !managedSecret.MatchesSpec(s.owner) {
-		// The Secret key has changed, so delete the old Secret
-		if err := s.DeleteSecret(managedSecret.Key()); err != nil {
+		if err := s.DeleteSecret(ctx, managedSecret.Key()); err != nil {
 			log.Error(err, "failed to delete managed secret")
 			return result, err
 		}
@@ -154,39 +117,37 @@ func (s *tokenSecret) Reconcile() (result reconcile.Result, err error) {
 
 	secret := &corev1.Secret{}
 
-	err = s.reconciler.Get(s.ctx, secretKey, secret)
-	if client.IgnoreNotFound(err) != nil {
+	err = s.client.Get(ctx, secretKey, secret)
+	if err != nil && !apierrors.IsNotFound(err) {
 		log.Error(err, "failed to get secret")
 		return result, err
 	}
 
 	if apierrors.IsNotFound(err) {
-		// Secret not found, so create it
 		start := time.Now()
-		if err := s.CreateSecret(); err != nil {
-			s.metrics.RecordTokenRefresh(s.ctx, s.controllerName(), metrics.ResultError)
-			s.metrics.RecordTokenRefreshDuration(s.ctx, s.controllerName(), metrics.OperationCreate, time.Since(start))
+		if err := s.CreateSecret(ctx); err != nil {
+			s.metrics.RecordTokenRefresh(ctx, s.controllerName, metrics.ResultError)
+			s.metrics.RecordTokenRefreshDuration(ctx, s.controllerName, metrics.OperationCreate, time.Since(start))
 			if errors.Is(err, ghait.TransientError{}) {
-				s.metrics.RecordReconcileError(s.ctx, s.controllerName(), metrics.ReasonTransient)
+				s.metrics.RecordReconcileError(ctx, s.controllerName, metrics.ReasonTransient)
 				log.Error(err, "transient error creating secret")
 				return reconcile.Result{RequeueAfter: s.owner.GetRetryInterval()}, nil
 			}
 
-			s.metrics.RecordReconcileError(s.ctx, s.controllerName(), metrics.ReasonSecretCreate)
+			s.metrics.RecordReconcileError(ctx, s.controllerName, metrics.ReasonSecretCreate)
 			log.Error(err, "fatal error creating secret")
 			return result, err
 		}
 
-		s.metrics.RecordTokenRefresh(s.ctx, s.controllerName(), metrics.ResultSuccess)
-		s.metrics.RecordTokenRefreshDuration(s.ctx, s.controllerName(), metrics.OperationCreate, time.Since(start))
-		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationCreate, metrics.ResultSuccess)
-		s.metrics.EnsureTokenActive(s.ctx, s.controllerName(), s.key.String())
-		s.recordExpiry()
+		s.metrics.RecordTokenRefresh(ctx, s.controllerName, metrics.ResultSuccess)
+		s.metrics.RecordTokenRefreshDuration(ctx, s.controllerName, metrics.OperationCreate, time.Since(start))
+		s.metrics.RecordSecretOperation(ctx, s.controllerName, metrics.OperationCreate, metrics.ResultSuccess)
+		s.metrics.EnsureTokenActive(ctx, s.controllerName, s.key.String())
+		s.recordExpiry(ctx)
 
 		return reconcile.Result{RequeueAfter: s.owner.GetRefreshInterval()}, nil
 	}
 
-	// Secret was found, so update it
 	if !metav1.IsControlledBy(secret, s.owner) {
 		condition := metav1.Condition{
 			Type:    githubv1.ConditionTypeReady,
@@ -194,11 +155,11 @@ func (s *tokenSecret) Reconcile() (result reconcile.Result, err error) {
 			Reason:  "Failed",
 			Message: "Secret already exists",
 		}
-		if err := s.UpdateTokenStatus(s.withCondition(condition)); err != nil {
+		if err := s.UpdateTokenStatus(ctx, &condition, nil, false); err != nil {
 			log.Error(err, "failed to update token status")
 			return result, err
 		}
-		s.metrics.RecordReconcileError(s.ctx, s.controllerName(), metrics.ReasonOwnership)
+		s.metrics.RecordReconcileError(ctx, s.controllerName, metrics.ReasonOwnership)
 		err := errors.New("existing secret not owned by token")
 		log.Error(err, "ownership mismatch", "token", s.owner)
 		return result, err
@@ -207,37 +168,37 @@ func (s *tokenSecret) Reconcile() (result reconcile.Result, err error) {
 	s.Secret = secret
 
 	start := time.Now()
-	if err := s.UpdateSecret(); err != nil {
-		s.metrics.RecordTokenRefresh(s.ctx, s.controllerName(), metrics.ResultError)
-		s.metrics.RecordTokenRefreshDuration(s.ctx, s.controllerName(), metrics.OperationUpdate, time.Since(start))
+	if err := s.UpdateSecret(ctx); err != nil {
+		s.metrics.RecordTokenRefresh(ctx, s.controllerName, metrics.ResultError)
+		s.metrics.RecordTokenRefreshDuration(ctx, s.controllerName, metrics.OperationUpdate, time.Since(start))
 		if errors.Is(err, ghait.TransientError{}) {
-			s.metrics.RecordReconcileError(s.ctx, s.controllerName(), metrics.ReasonTransient)
+			s.metrics.RecordReconcileError(ctx, s.controllerName, metrics.ReasonTransient)
 			log.Error(err, "transient error updating secret")
 			return reconcile.Result{RequeueAfter: s.owner.GetRetryInterval()}, nil
 		}
 
-		s.metrics.RecordReconcileError(s.ctx, s.controllerName(), metrics.ReasonSecretUpdate)
+		s.metrics.RecordReconcileError(ctx, s.controllerName, metrics.ReasonSecretUpdate)
 		log.Error(err, "fatal error updating secret")
 		return result, err
 	}
 
-	s.metrics.RecordTokenRefresh(s.ctx, s.controllerName(), metrics.ResultSuccess)
-	s.metrics.RecordTokenRefreshDuration(s.ctx, s.controllerName(), metrics.OperationUpdate, time.Since(start))
-	s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationUpdate, metrics.ResultSuccess)
-	s.metrics.EnsureTokenActive(s.ctx, s.controllerName(), s.key.String())
-	s.recordExpiry()
+	s.metrics.RecordTokenRefresh(ctx, s.controllerName, metrics.ResultSuccess)
+	s.metrics.RecordTokenRefreshDuration(ctx, s.controllerName, metrics.OperationUpdate, time.Since(start))
+	s.metrics.RecordSecretOperation(ctx, s.controllerName, metrics.OperationUpdate, metrics.ResultSuccess)
+	s.metrics.EnsureTokenActive(ctx, s.controllerName, s.key.String())
+	s.recordExpiry(ctx)
 
 	return reconcile.Result{RequeueAfter: s.owner.GetRefreshInterval()}, nil
 }
 
-func (s *tokenSecret) CreateSecret() error {
+func (s *tokenSecret) CreateSecret(ctx context.Context) error {
 	log := s.log.WithValues("func", "CreateSecret")
 	log.Info("creating secret")
 
-	installationToken, err := s.NewInstallationToken()
+	installationToken, err := s.NewInstallationToken(ctx)
 	if err != nil {
 		log.Error(err, "failed to get installation token")
-		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationCreate, metrics.ResultError)
+		s.metrics.RecordSecretOperation(ctx, s.controllerName, metrics.OperationCreate, metrics.ResultError)
 		return err
 	}
 
@@ -259,42 +220,26 @@ func (s *tokenSecret) CreateSecret() error {
 
 	s.Secret = secret
 
-	// Set the ownerRef for the Secret
-	// More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/owners-dependents/
-	if err := ctrl.SetControllerReference(s.owner, s.Secret, s.reconciler.Scheme()); err != nil {
+	if err := ctrl.SetControllerReference(s.owner, s.Secret, s.client.Scheme()); err != nil {
 		log.Error(err, "failed to set controller reference")
-		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationCreate, metrics.ResultError)
+		s.metrics.RecordSecretOperation(ctx, s.controllerName, metrics.OperationCreate, metrics.ResultError)
+		return err
+	}
+
+	if err := s.client.Create(ctx, s.Secret); err != nil {
+		log.Error(err, "failed to create secret")
+		s.metrics.RecordSecretOperation(ctx, s.controllerName, metrics.OperationCreate, metrics.ResultError)
 		return err
 	}
 
 	condition := metav1.Condition{
 		Type:    githubv1.ConditionTypeReady,
-		Status:  metav1.ConditionFalse,
-		Reason:  "Creating",
-		Message: "Creating Secret",
+		Status:  metav1.ConditionTrue,
+		Reason:  "Created",
+		Message: "Created Secret",
 	}
-
-	if err := s.UpdateTokenStatus(s.withCondition(condition)); err != nil {
-		log.Error(err, "failed to update token status", "condition", condition)
-		return err
-	}
-
-	if err := s.reconciler.Create(s.ctx, s.Secret); err != nil {
-		log.Error(err, "failed to create secret")
-		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationCreate, metrics.ResultError)
-		return err
-	}
-
-	condition.Status = metav1.ConditionTrue
-	condition.Reason = "Created"
-	condition.Message = "Created Secret"
-
-	options := []tokenStatusOptions{
-		s.withCondition(condition),
-		s.withUpdateManagedSecret(),
-		s.withExpiresAt(installationToken.ExpiresAt.Time),
-	}
-	if err := s.UpdateTokenStatus(options...); err != nil {
+	expiresAt := installationToken.ExpiresAt.Time
+	if err := s.UpdateTokenStatus(ctx, &condition, &expiresAt, true); err != nil {
 		log.Error(err, "failed to update token status")
 		return err
 	}
@@ -302,47 +247,33 @@ func (s *tokenSecret) CreateSecret() error {
 	return nil
 }
 
-func (s *tokenSecret) UpdateSecret() error {
+func (s *tokenSecret) UpdateSecret(ctx context.Context) error {
 	log := s.log.WithValues("func", "UpdateSecret")
 	log.Info("updating secret")
 
-	installationToken, err := s.NewInstallationToken()
+	installationToken, err := s.NewInstallationToken(ctx)
 	if err != nil {
 		log.Error(err, "failed to get installation token")
-		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationUpdate, metrics.ResultError)
+		s.metrics.RecordSecretOperation(ctx, s.controllerName, metrics.OperationUpdate, metrics.ResultError)
 		return err
 	}
 
 	s.Data = s.SecretData(installationToken.GetToken())
 
+	if err := s.client.Update(ctx, s.Secret); err != nil {
+		log.Error(err, "failed to update secret")
+		s.metrics.RecordSecretOperation(ctx, s.controllerName, metrics.OperationUpdate, metrics.ResultError)
+		return err
+	}
+
 	condition := metav1.Condition{
 		Type:    githubv1.ConditionTypeReady,
-		Status:  metav1.ConditionUnknown,
-		Reason:  "Updating",
-		Message: "Updating Secret",
+		Status:  metav1.ConditionTrue,
+		Reason:  "Updated",
+		Message: "Updated Secret",
 	}
-
-	if err := s.UpdateTokenStatus(s.withCondition(condition)); err != nil {
-		log.Error(err, "failed to update token status")
-		return err
-	}
-
-	if err := s.reconciler.Update(s.ctx, s.Secret); err != nil {
-		log.Error(err, "failed to update secret")
-		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationUpdate, metrics.ResultError)
-		return err
-	}
-
-	condition.Status = metav1.ConditionTrue
-	condition.Reason = "Updated"
-	condition.Message = "Updated Secret"
-
-	options := []tokenStatusOptions{
-		s.withCondition(condition),
-		s.withUpdateManagedSecret(),
-		s.withExpiresAt(installationToken.ExpiresAt.Time),
-	}
-	if err := s.UpdateTokenStatus(options...); err != nil {
+	expiresAt := installationToken.ExpiresAt.Time
+	if err := s.UpdateTokenStatus(ctx, &condition, &expiresAt, true); err != nil {
 		log.Error(err, "failed to update token status")
 		return err
 	}
@@ -350,23 +281,11 @@ func (s *tokenSecret) UpdateSecret() error {
 	return nil
 }
 
-func (s *tokenSecret) DeleteSecret(key types.NamespacedName) error {
+func (s *tokenSecret) DeleteSecret(ctx context.Context, key types.NamespacedName) error {
 	log := s.log.WithValues("func", "DeleteSecret")
 
-	condition := metav1.Condition{
-		Type:    githubv1.ConditionTypeReady,
-		Status:  metav1.ConditionFalse,
-		Reason:  "Reconciling",
-		Message: "Deleting old Secret",
-	}
-
-	if err := s.UpdateTokenStatus(s.withCondition(condition)); err != nil {
-		log.Error(err, "failed to update token status")
-		return err
-	}
-
 	secret := &corev1.Secret{}
-	if err := s.reconciler.Get(s.ctx, key, secret); err != nil {
+	if err := s.client.Get(ctx, key, secret); err != nil {
 		if apierrors.IsNotFound(err) {
 			log.Info("existing secret not found")
 			return nil
@@ -380,20 +299,23 @@ func (s *tokenSecret) DeleteSecret(key types.NamespacedName) error {
 		return nil
 	}
 
-	// Delete the old Secret; failure to delete is fatal
 	log.Info("deleting existing secret")
-	if err := s.reconciler.Delete(s.ctx, secret); err != nil {
+	if err := s.client.Delete(ctx, secret); err != nil {
 		log.Error(err, "failed to delete secret")
-		s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationDelete, metrics.ResultError)
+		s.metrics.RecordSecretOperation(ctx, s.controllerName, metrics.OperationDelete, metrics.ResultError)
 		return err
 	}
 
-	s.metrics.RecordSecretOperation(s.ctx, s.controllerName(), metrics.OperationDelete, metrics.ResultSuccess)
-	s.metrics.RemoveTokenActive(s.ctx, s.controllerName(), s.key.String())
+	s.metrics.RecordSecretOperation(ctx, s.controllerName, metrics.OperationDelete, metrics.ResultSuccess)
+	s.metrics.RemoveTokenActive(ctx, s.controllerName, s.key.String())
 
-	condition.Message = "Deleted old Secret"
-
-	if err := s.UpdateTokenStatus(s.withCondition(condition)); err != nil {
+	condition := metav1.Condition{
+		Type:    githubv1.ConditionTypeReady,
+		Status:  metav1.ConditionFalse,
+		Reason:  "Reconciling",
+		Message: "Deleted old Secret",
+	}
+	if err := s.UpdateTokenStatus(ctx, &condition, nil, false); err != nil {
 		log.Error(err, "failed to update token status")
 		return err
 	}
@@ -401,57 +323,39 @@ func (s *tokenSecret) DeleteSecret(key types.NamespacedName) error {
 	return nil
 }
 
-type tokenStatusOptions func() (changed bool)
-
-func (s *tokenSecret) withCondition(condition metav1.Condition) tokenStatusOptions {
-	return func() (changed bool) {
-		return s.owner.SetStatusCondition(condition)
-	}
-}
-
-func (s *tokenSecret) withExpiresAt(expiresAt time.Time) tokenStatusOptions {
-	return func() (changed bool) {
-		s.owner.SetStatusTimestamps(expiresAt)
-		return true
-	}
-}
-
-func (s *tokenSecret) withUpdateManagedSecret() tokenStatusOptions {
-	return func() (changed bool) {
-		return s.owner.UpdateManagedSecret()
-	}
-}
-
-func (s *tokenSecret) UpdateTokenStatus(options ...tokenStatusOptions) error {
+// UpdateTokenStatus refreshes the owner, applies the given mutations, and
+// writes status if anything changed, retrying on conflict. Pass nil for
+// condition or expiresAt to leave them untouched; updateManaged toggles the
+// ManagedSecret refresh.
+func (s *tokenSecret) UpdateTokenStatus(ctx context.Context, condition *metav1.Condition, expiresAt *time.Time, updateManaged bool) error {
 	log := s.log.WithValues("func", "UpdateTokenStatus")
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		if err := s.RefreshOwner(); err != nil {
+		if err := s.RefreshOwner(ctx); err != nil {
 			return err
 		}
 
 		var changed bool
-		for _, option := range options {
-			changed = option() || changed
+		if condition != nil && s.owner.SetStatusCondition(*condition) {
+			changed = true
+		}
+		if expiresAt != nil {
+			s.owner.SetStatusTimestamps(*expiresAt)
+			changed = true
+		}
+		if updateManaged && s.owner.UpdateManagedSecret() {
+			changed = true
 		}
 
 		if !changed {
 			return nil
 		}
-
-		return s.reconciler.Status().Update(s.ctx, s.owner)
+		return s.client.Status().Update(ctx, s.owner)
 	})
-
 	if err != nil {
 		log.Error(err, "failed to update token status")
 		return err
 	}
-
-	if err := s.RefreshOwner(); err != nil {
-		log.Error(err, "failed to refresh token after status update")
-		return err
-	}
-
 	return nil
 }
 
@@ -472,26 +376,8 @@ func (s *tokenSecret) SecretData(installationToken string) map[string][]byte {
 			"username": []byte(BasicAuthUsername),
 			"password": []byte(installationToken),
 		}
-	} else {
-		return map[string][]byte{
-			"token": []byte(installationToken),
-		}
 	}
-}
-
-func (s *tokenSecret) RemoveOldSecret(key types.NamespacedName) error {
-	log := s.log.WithValues("func", "RemoveOldSecret")
-
-	secret := &corev1.Secret{}
-	if err := s.reconciler.Get(s.ctx, key, secret); err != nil && apierrors.IsNotFound(err) {
-		log.Info("existing secret not found")
-		return nil
-	} else if err == nil && metav1.IsControlledBy(s.Secret, s.owner) {
-		// Delete the old Secret; failure to delete is fatal
-		log.Info("deleting existing secret")
-		return s.reconciler.Delete(s.ctx, s.Secret)
-	} else {
-		log.Error(err, "failed to get secret")
-		return err
+	return map[string][]byte{
+		"token": []byte(installationToken),
 	}
 }

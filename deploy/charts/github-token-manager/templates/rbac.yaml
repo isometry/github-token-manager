@@ -118,32 +118,8 @@ rules:
   - apiGroups:
       - github.as-code.io
     resources:
+      - apps
       - clustertokens
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
-  - apiGroups:
-      - github.as-code.io
-    resources:
-      - clustertokens/finalizers
-    verbs:
-      - update
-  - apiGroups:
-      - github.as-code.io
-    resources:
-      - clustertokens/status
-    verbs:
-      - get
-      - patch
-      - update
-  - apiGroups:
-      - github.as-code.io
-    resources:
       - tokens
     verbs:
       - create
@@ -156,12 +132,16 @@ rules:
   - apiGroups:
       - github.as-code.io
     resources:
+      - apps/finalizers
+      - clustertokens/finalizers
       - tokens/finalizers
     verbs:
       - update
   - apiGroups:
       - github.as-code.io
     resources:
+      - apps/status
+      - clustertokens/status
       - tokens/status
     verbs:
       - get

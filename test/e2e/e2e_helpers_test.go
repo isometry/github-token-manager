@@ -41,8 +41,10 @@ import (
 	. "github.com/onsi/gomega" //nolint:staticcheck
 	"golang.org/x/oauth2"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/yaml"
 
 	gtmv1 "github.com/isometry/github-token-manager/api/v1"
 	"github.com/isometry/github-token-manager/internal/tokenmanager"
@@ -104,6 +106,22 @@ func (c *clientContext) waitForClusterTokenReconciliation(name string) {
 		g.Expect(clusterTokenObj.Status.Conditions).To(HaveLen(1))
 		g.Expect(clusterTokenObj.Status.Conditions[0].Type).To(Equal(gtmv1.ConditionTypeReady))
 		g.Expect(clusterTokenObj.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+	}).Within(reconciliationTimeout).Should(Succeed())
+}
+
+// waitForAppReconciliation waits for an App resource to reach status Ready=True.
+func (c *clientContext) waitForAppReconciliation(name, namespace string) {
+	Eventually(func(g Gomega) {
+		app := &gtmv1.App{}
+		g.Expect(
+			c.client.Get(c.context, client.ObjectKey{
+				Name:      name,
+				Namespace: namespace,
+			}, app),
+		).NotTo(HaveOccurred())
+		ready := meta.FindStatusCondition(app.Status.Conditions, gtmv1.ConditionTypeReady)
+		g.Expect(ready).NotTo(BeNil())
+		g.Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 	}).Within(reconciliationTimeout).Should(Succeed())
 }
 
@@ -193,12 +211,31 @@ func (c *clientContext) deleteNamespace(name string) error {
 	return c.client.Delete(c.context, ns)
 }
 
-// createToken creates a standard Token resource for testing
+// createToken creates a Token resource. An empty appRefName uses the
+// operator's startup configuration; otherwise the Token resolves its GitHub
+// App credentials via spec.appRef.
 func (c *clientContext) createToken(
-	name, namespace, secretName string,
+	name, namespace, secretName, appRefName string,
 	isBasicAuth bool,
 	refreshInterval time.Duration,
 ) error {
+	spec := gtmv1.TokenSpec{
+		RefreshInterval: metav1.Duration{Duration: refreshInterval},
+		Secret: gtmv1.TokenSecretSpec{
+			Name:      secretName,
+			BasicAuth: isBasicAuth,
+		},
+		Repositories: []string{
+			testRepositoryName,
+		},
+		Permissions: &gtmv1.Permissions{
+			Contents: &readPermission,
+			Metadata: &readPermission,
+		},
+	}
+	if appRefName != "" {
+		spec.AppRef = &gtmv1.LocalAppReference{Name: appRefName}
+	}
 	token := &gtmv1.Token{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "github.as-code.io/v1",
@@ -208,20 +245,7 @@ func (c *clientContext) createToken(
 			Name:      name,
 			Namespace: namespace,
 		},
-		Spec: gtmv1.TokenSpec{
-			RefreshInterval: metav1.Duration{Duration: refreshInterval},
-			Secret: gtmv1.TokenSecretSpec{
-				Name:      secretName,
-				BasicAuth: isBasicAuth,
-			},
-			Repositories: []string{
-				testRepositoryName,
-			},
-			Permissions: &gtmv1.Permissions{
-				Contents: &readPermission,
-				Metadata: &readPermission,
-			},
-		},
+		Spec: spec,
 	}
 
 	return c.client.Create(c.context, token)
@@ -280,6 +304,57 @@ func (c *clientContext) deleteClusterToken(name string) error {
 	return c.client.Delete(c.context, clusterToken)
 }
 
+// createApp creates an App resource with the supplied AppSpec.
+func (c *clientContext) createApp(name, namespace string, spec gtmv1.AppSpec) error {
+	app := &gtmv1.App{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "github.as-code.io/v1",
+			Kind:       "App",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Spec: spec,
+	}
+	return c.client.Create(c.context, app)
+}
+
+// deleteApp deletes an App resource.
+func (c *clientContext) deleteApp(name, namespace string) error {
+	app := &gtmv1.App{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+	return c.client.Delete(c.context, app)
+}
+
+// createOpaqueSecret creates an Opaque Secret with the supplied data map.
+func (c *clientContext) createOpaqueSecret(name, namespace string, data map[string][]byte) error {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: data,
+	}
+	return c.client.Create(c.context, secret)
+}
+
+// deleteSecret deletes a Secret by name.
+func (c *clientContext) deleteSecret(name, namespace string) error {
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+	return c.client.Delete(c.context, secret)
+}
+
 // runCommand executes the provided command within this context
 func runCommand(cmd *exec.Cmd) ([]byte, error) {
 	dir, _ := getProjectDir()
@@ -330,6 +405,36 @@ func getProjectDir() (string, error) {
 		}
 		dir = parent
 	}
+}
+
+// parseHelmValuesFile extracts the github-token-manager config block from a
+// Helm values.yaml so the captured credentials can be reused by later specs.
+func parseHelmValuesFile(path string) (*gtmConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading helm values file %q: %w", path, err)
+	}
+	var v struct {
+		Config struct {
+			AppID          int64  `json:"app_id"`
+			InstallationID int64  `json:"installation_id"`
+			Provider       string `json:"provider"`
+			Key            string `json:"key"`
+		} `json:"config"`
+	}
+	if err := yaml.Unmarshal(data, &v); err != nil {
+		return nil, fmt.Errorf("unmarshalling helm values file %q: %w", path, err)
+	}
+	provider := v.Config.Provider
+	if provider == "" {
+		provider = "file"
+	}
+	return &gtmConfig{
+		appID:          v.Config.AppID,
+		installationID: v.Config.InstallationID,
+		provider:       provider,
+		key:            v.Config.Key,
+	}, nil
 }
 
 // generateTestKey generates a new RSA private key and returns it as a PEM-encoded string
