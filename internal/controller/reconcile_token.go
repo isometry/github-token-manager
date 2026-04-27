@@ -23,7 +23,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	githubv1 "github.com/isometry/github-token-manager/api/v1"
 	"github.com/isometry/github-token-manager/internal/ghapp"
 	"github.com/isometry/github-token-manager/internal/metrics"
 	tm "github.com/isometry/github-token-manager/internal/tokenmanager"
@@ -38,20 +37,14 @@ type TokenReconcilerBase struct {
 	Registry *ghapp.Registry
 }
 
-// tokenObject is the generic constraint for a Token-like CR. PT is the
-// pointer type (*Token or *ClusterToken); the interface lists the methods
-// the reconcile helper needs that aren't already on tm.TokenManager.
-type tokenObject[T any] interface {
-	tm.TokenManager
-	GetAppRef() *githubv1.AppReference
-	*T
-}
-
 // reconcileTokenLike runs the post-Get reconcile body shared by Token and
 // ClusterToken: fetch the typed object, resolve its App reference, surface
 // any failure as a status condition, then hand off to tokenmanager to
 // reconcile the managed Secret.
-func reconcileTokenLike[T any, PT tokenObject[T]](
+func reconcileTokenLike[T any, PT interface {
+	tm.TokenManager
+	*T
+}](
 	ctx context.Context,
 	r *TokenReconcilerBase,
 	req ctrl.Request,
@@ -82,22 +75,14 @@ func reconcileTokenLike[T any, PT tokenObject[T]](
 	}
 
 	options := []tm.Option{
-		tm.WithReconciler(r.Client),
+		tm.WithClient(r.Client),
 		tm.WithGHApp(resolution.Client),
 		tm.WithLogger(logger),
 		tm.WithMetrics(r.Metrics),
 	}
 
-	tokenSecret, err := tm.NewTokenSecret(ctx, req.NamespacedName, owner, controllerName, options...)
-	if err != nil {
-		logger.Error(err, "failed to create token reconciler")
-		return ctrl.Result{}, err
-	}
-	if tokenSecret == nil {
-		return ctrl.Result{}, nil
-	}
-
-	result, err := tokenSecret.Reconcile()
+	tokenSecret := tm.NewTokenSecret(req.NamespacedName, owner, controllerName, options...)
+	result, err := tokenSecret.Reconcile(ctx)
 	if err != nil {
 		logger.Error(err, "failed to reconcile token")
 		return result, err

@@ -35,9 +35,6 @@ func countingFactory() (FactoryFunc, *int) {
 
 func TestRegistry_Startup_NoConfig(t *testing.T) {
 	r := NewRegistry("gtm-system", nil)
-	if r.HasStartupConfig() {
-		t.Fatalf("HasStartupConfig() = true with nil cfg")
-	}
 	_, err := r.Startup(context.Background())
 	if !errors.Is(err, ErrNoStartupConfig) {
 		t.Fatalf("Startup() err = %v, want ErrNoStartupConfig", err)

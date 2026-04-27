@@ -25,13 +25,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // ClusterTokenSpec defines the desired state of ClusterToken
 type ClusterTokenSpec struct {
-	// Important: Run "make" to regenerate code after modifying this file
-
 	// +optional
 	// Reference to the App that provides the GitHub App credentials for this
 	// ClusterToken. When spec.appRef.namespace is empty, the operator resolves
@@ -104,8 +99,6 @@ type ClusterTokenSecretSpec struct {
 
 // ClusterTokenStatus defines the observed state of ClusterToken
 type ClusterTokenStatus struct {
-	// Important: Run "make" to regenerate code after modifying this file
-
 	ManagedSecret ManagedSecret `json:"managedSecret,omitempty"`
 
 	IAT InstallationAccessToken `json:"installationAccessToken,omitempty"`
@@ -128,10 +121,6 @@ type ClusterToken struct {
 
 func (t *ClusterToken) GetType() string {
 	return "ClusterToken"
-}
-
-func (t *ClusterToken) GetName() string {
-	return t.Name
 }
 
 func (t *ClusterToken) GetInstallationID() int64 {

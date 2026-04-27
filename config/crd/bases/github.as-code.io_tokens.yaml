@@ -379,9 +379,6 @@ spec:
                       type: string
                   type: object
                 managedSecret:
-                  description:
-                    'Important: Run "make" to regenerate code after modifying
-                    this file'
                   properties:
                     basicAuth:
                       type: boolean

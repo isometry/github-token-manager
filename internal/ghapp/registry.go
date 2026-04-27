@@ -96,11 +96,6 @@ func (r *Registry) OperatorNamespace() string {
 	return r.operatorNS
 }
 
-// HasStartupConfig reports whether a startup GitHub App config is available.
-func (r *Registry) HasStartupConfig() bool {
-	return r.startupCfg != nil
-}
-
 // Startup returns the cached startup-config client, building it on first use.
 // Returns [ErrNoStartupConfig] if no startup config was loaded.
 func (r *Registry) Startup(ctx context.Context) (ghait.GHAIT, error) {

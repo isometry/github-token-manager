@@ -94,11 +94,14 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 			Reason:  failure,
 			Message: buildErr.Error(),
 		}
-		keyValid := metav1.Condition{
-			Type:    githubv1.ConditionTypeKeyValid,
-			Status:  metav1.ConditionFalse,
-			Reason:  failure,
-			Message: buildErr.Error(),
+		var keyValid *metav1.Condition
+		if app.Spec.ValidateKey {
+			keyValid = &metav1.Condition{
+				Type:    githubv1.ConditionTypeKeyValid,
+				Status:  metav1.ConditionFalse,
+				Reason:  failure,
+				Message: buildErr.Error(),
+			}
 		}
 		if err := r.writeAppStatus(ctx, app, ready, keyValid); err != nil {
 			return ctrl.Result{}, err
@@ -112,11 +115,14 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 		Reason:  githubv1.ReasonReconciled,
 		Message: "GitHub App client ready",
 	}
-	keyValid := metav1.Condition{
-		Type:    githubv1.ConditionTypeKeyValid,
-		Status:  metav1.ConditionTrue,
-		Reason:  githubv1.ReasonReconciled,
-		Message: "signer key validated",
+	var keyValid *metav1.Condition
+	if app.Spec.ValidateKey {
+		keyValid = &metav1.Condition{
+			Type:    githubv1.ConditionTypeKeyValid,
+			Status:  metav1.ConditionTrue,
+			Reason:  githubv1.ReasonReconciled,
+			Message: "signer key validated",
+		}
 	}
 	if err := r.writeAppStatus(ctx, app, ready, keyValid); err != nil {
 		return ctrl.Result{}, err
@@ -125,12 +131,12 @@ func (r *AppReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.R
 }
 
 // writeAppStatus applies the Ready condition, applies or clears the KeyValid
-// condition based on Spec.ValidateKey, bumps ObservedGeneration, and writes
-// status only if anything actually changed.
-func (r *AppReconciler) writeAppStatus(ctx context.Context, app *githubv1.App, ready, keyValid metav1.Condition) error {
+// condition (nil clears), bumps ObservedGeneration, and writes status only if
+// anything actually changed.
+func (r *AppReconciler) writeAppStatus(ctx context.Context, app *githubv1.App, ready metav1.Condition, keyValid *metav1.Condition) error {
 	changed := app.SetStatusCondition(ready)
-	if app.Spec.ValidateKey {
-		if app.SetStatusCondition(keyValid) {
+	if keyValid != nil {
+		if app.SetStatusCondition(*keyValid) {
 			changed = true
 		}
 	} else if meta.RemoveStatusCondition(&app.Status.Conditions, githubv1.ConditionTypeKeyValid) {
