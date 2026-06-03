@@ -3,7 +3,7 @@
 apiVersion: v1
 kind: Secret
 metadata:
-  name: gtm-config
+  name: {{ .Values.config.secretName }}
   {{- with (default dict .Values.commonAnnotations) }}
   annotations:
     {{- range $key, $value := . }}

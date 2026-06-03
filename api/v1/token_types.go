@@ -25,12 +25,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
-
 // TokenSpec defines the desired state of Token
 type TokenSpec struct {
-	// Important: Run "make" to regenerate code after modifying this file
+	// +optional
+	// Reference to the App that provides the GitHub App credentials for this
+	// Token. Must be in the same namespace as the Token. When unset, the
+	// operator's startup configuration is used.
+	AppRef *LocalAppReference `json:"appRef,omitempty"`
 
 	// +optional
 	// Override the default token secret name and type
@@ -92,7 +93,6 @@ type TokenSecretSpec struct {
 
 // TokenStatus defines the observed state of Token
 type TokenStatus struct {
-	// Important: Run "make" to regenerate code after modifying this file
 	ManagedSecret ManagedSecret `json:"managedSecret,omitempty"`
 
 	IAT InstallationAccessToken `json:"installationAccessToken,omitempty"`
@@ -116,12 +116,22 @@ func (t *Token) GetType() string {
 	return "Token"
 }
 
-func (t *Token) GetName() string {
-	return t.Name
-}
-
 func (t *Token) GetInstallationID() int64 {
 	return t.Spec.InstallationID
+}
+
+// GetAppRef returns a normalized *AppReference for the App backing this Token,
+// or nil when no AppRef is set (falling back to the startup config). The
+// namespace is always the Token's own namespace, since Tokens cannot reference
+// Apps cross-namespace.
+func (t *Token) GetAppRef() *AppReference {
+	if t.Spec.AppRef == nil {
+		return nil
+	}
+	return &AppReference{
+		Name:      t.Spec.AppRef.Name,
+		Namespace: t.Namespace,
+	}
 }
 
 func (t *Token) GetRefreshInterval() time.Duration {

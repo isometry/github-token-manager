@@ -39,6 +39,26 @@ spec:
             spec:
               description: ClusterTokenSpec defines the desired state of ClusterToken
               properties:
+                appRef:
+                  description: |-
+                    Reference to the App that provides the GitHub App credentials for this
+                    ClusterToken. When spec.appRef.namespace is empty, the operator resolves
+                    the reference in its own namespace. When unset, the operator's startup
+                    configuration is used.
+                  properties:
+                    name:
+                      description: Name of the App resource.
+                      maxLength: 253
+                      type: string
+                    namespace:
+                      description: |-
+                        Namespace containing the App resource. If empty, defaults to the
+                        operator's own namespace.
+                      maxLength: 253
+                      type: string
+                  required:
+                    - name
+                  type: object
                 installationID:
                   description:
                     Specify or override the InstallationID of the GitHub

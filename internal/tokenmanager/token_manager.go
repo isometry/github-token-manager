@@ -10,16 +10,12 @@ import (
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
 )
 
-type tokenReconciler interface {
-	client.Client
-}
-
-// tokenManager provides a common interface for both namespaced Tokens and ClusterTokens
-type tokenManager interface {
+// TokenManager provides a common interface for both namespaced Tokens and ClusterTokens.
+type TokenManager interface {
 	client.Object
 
 	GetType() string
-	GetName() string
+	GetAppRef() *githubv1.AppReference
 	GetSecretBasicAuth() bool
 	GetInstallationID() int64
 	GetRefreshInterval() time.Duration
