@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -137,7 +138,12 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 	Context("Container Image", func() {
 		It("builds successfully", func() {
 			By("building the manager image")
-			cmd := exec.Command("ko", "build", "--local", "./cmd/manager")
+			// Force the host architecture: without --platform, ko inherits the
+			// multi-platform defaultPlatforms from .ko.yaml and the Docker daemon
+			// load collapses to linux/amd64, which fails to exec on arm64 kind nodes.
+			// kind nodes share the host kernel arch, so runtime.GOARCH is correct.
+			platform := "linux/" + goruntime.GOARCH
+			cmd := exec.Command("ko", "build", "--local", "--platform="+platform, "./cmd/manager")
 			output, err := runCommand(cmd)
 			Expect(err).NotTo(HaveOccurred())
 			testImage = strings.TrimSpace(string(output))

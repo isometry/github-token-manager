@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
+	"go.opentelemetry.io/otel/attribute"
 	promexporter "go.opentelemetry.io/otel/exporters/prometheus"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
 	crmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 )
 
@@ -27,11 +27,15 @@ func Setup(version string) (*Recorder, error) {
 		return nil, fmt.Errorf("creating prometheus exporter: %w", err)
 	}
 
-	res, err := resource.Merge(resource.Default(), resource.NewWithAttributes(
-		semconv.SchemaURL,
-		semconv.ServiceName(serviceName),
-		semconv.ServiceVersion(version),
-		semconv.ServiceInstanceID(instanceID()),
+	// Build the resource schemaless so it merges cleanly with resource.Default():
+	// resource.Merge only conflicts when both sides carry non-empty, differing schema
+	// URLs, so an empty schema URL here inherits Default()'s. This avoids coupling to
+	// the SDK's internal semconv version. semconv.ServiceName(v) is just
+	// attribute.String("service.name", v), so the literal keys are equivalent.
+	res, err := resource.Merge(resource.Default(), resource.NewSchemaless(
+		attribute.String("service.name", serviceName),
+		attribute.String("service.version", version),
+		attribute.String("service.instance.id", instanceID()),
 	))
 	if err != nil {
 		return nil, fmt.Errorf("building metrics resource: %w", err)
