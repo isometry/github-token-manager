@@ -150,7 +150,20 @@ spec:
     labels: {}         # (optional) map of labels for managed `Secret`
     name: bar          # (optional) override name for managed `Secret` (default: .metadata.name)
     namespace: default # (required, ClusterToken-only) set the target namespace for managed `Secret`
+    extraData:         # (optional) list of additional keys to project into managed `Secret`
+      - inline: {}             # static key/value pairs, merged verbatim
+      - configMap:              # project keys from a ConfigMap
+          name: foo
+          namespace: bar        # (ClusterToken: defaults to `secret.namespace`; Token: not permitted, always own namespace)
+          keys: []              # (optional) allowlist of keys to project (default: all keys)
+          optional: false       # (optional) if true, a missing/unreadable source or key is skipped rather than failing
+      - secret:                 # project keys from a Secret; same fields as configMap
+          name: baz
 ```
+
+`spec.secret.extraData` projects additional keys into the managed `Secret` alongside the generated credentials, from inline values and/or referenced ConfigMaps/Secrets. Entries are merged in order, with later entries overriding earlier ones on key collision (logged as a Warning event). Operator-managed keys are always authoritative: inline entries that set a reserved key (`username`/`password` when `basicAuth: true`, or `token` otherwise) are rejected at admission, while the same keys from a ConfigMap/Secret source are silently dropped at reconcile (also a Warning event) since their contents aren't known until read.
+
+By default (`optional: false`), a required source that cannot be read, or a listed key missing from it, fails the reconcile: the managed `Secret` is deleted (or never created) and the failure is surfaced on the `Token`/`ClusterToken` status. Set `optional: true` on a ref to skip it instead. Sources are re-read on the existing refresh/retry interval; there is no separate watch on the referenced ConfigMap/Secret.
 
 ### Multiple GitHub Apps (`App` CRD)
 

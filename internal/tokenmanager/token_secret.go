@@ -12,6 +12,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -31,11 +32,14 @@ const (
 type tokenSecret struct {
 	log            logr.Logger
 	client         client.Client
+	reader         client.Reader
+	recorder       record.EventRecorder
 	key            types.NamespacedName
 	owner          TokenManager
 	controllerName string
 	ghait          ghait.GHAIT
 	metrics        *metrics.Recorder
+	extraData      map[string][]byte
 	*corev1.Secret
 }
 
@@ -44,6 +48,23 @@ type Option func(*tokenSecret)
 func WithClient(c client.Client) Option {
 	return func(s *tokenSecret) {
 		s.client = c
+	}
+}
+
+// WithAPIReader supplies an uncached reader used to resolve extraData
+// ConfigMap/Secret sources live on every reconcile, rather than starting a
+// cluster-wide watch/cache for objects the operator otherwise never touches.
+func WithAPIReader(r client.Reader) Option {
+	return func(s *tokenSecret) {
+		s.reader = r
+	}
+}
+
+// WithEventRecorder supplies the recorder used to surface non-fatal
+// extraData issues (reserved/shadowed keys) as Warning events on the owner.
+func WithEventRecorder(r record.EventRecorder) Option {
+	return func(s *tokenSecret) {
+		s.recorder = r
 	}
 }
 
@@ -114,6 +135,33 @@ func (s *tokenSecret) Reconcile(ctx context.Context) (result reconcile.Result, e
 		Namespace: s.owner.GetSecretNamespace(),
 		Name:      s.owner.GetSecretName(),
 	}
+
+	extraData, err := s.resolveExtraData(ctx)
+	if err != nil {
+		var required *requiredSourceError
+		if errors.As(err, &required) {
+			log.Info("required extraData source unavailable, deleting managed secret", "reason", err.Error())
+			if delErr := s.DeleteSecret(ctx, secretKey); delErr != nil {
+				log.Error(delErr, "failed to delete secret after extraData resolution failure")
+				return result, delErr
+			}
+			condition := metav1.Condition{
+				Type:    githubv1.ConditionTypeReady,
+				Status:  metav1.ConditionFalse,
+				Reason:  "SourceUnavailable",
+				Message: err.Error(),
+			}
+			if statusErr := s.UpdateTokenStatus(ctx, &condition, nil, false); statusErr != nil {
+				log.Error(statusErr, "failed to update token status")
+				return result, statusErr
+			}
+			s.metrics.RecordReconcileError(ctx, s.controllerName, metrics.ReasonExtraData)
+			return reconcile.Result{RequeueAfter: s.owner.GetRetryInterval()}, nil
+		}
+		log.Error(err, "failed to resolve extraData")
+		return result, err
+	}
+	s.extraData = extraData
 
 	secret := &corev1.Secret{}
 
@@ -370,14 +418,19 @@ func (s *tokenSecret) SecretLabels() map[string]string {
 	return secretLabels
 }
 
+// SecretData builds the final Secret payload from the extraData already
+// resolved by resolveExtraData (see Reconcile) plus the operator-managed
+// credential keys, which always win over any extraData overlap.
 func (s *tokenSecret) SecretData(installationToken string) map[string][]byte {
+	data := make(map[string][]byte, len(s.extraData)+2)
+	maps.Copy(data, s.extraData)
+
 	if s.owner.GetSecretBasicAuth() {
-		return map[string][]byte{
-			"username": []byte(BasicAuthUsername),
-			"password": []byte(installationToken),
-		}
+		data["username"] = []byte(BasicAuthUsername)
+		data["password"] = []byte(installationToken)
+	} else {
+		data["token"] = []byte(installationToken)
 	}
-	return map[string][]byte{
-		"token": []byte(installationToken),
-	}
+
+	return data
 }
