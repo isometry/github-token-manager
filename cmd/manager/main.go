@@ -268,6 +268,8 @@ func main() {
 
 	tokenBase := controller.TokenReconcilerBase{
 		Client:   mgr.GetClient(),
+		Reader:   mgr.GetAPIReader(),
+		Recorder: mgr.GetEventRecorderFor("github-token-manager"),
 		Metrics:  metricsRecorder,
 		Registry: registry,
 	}

@@ -17,6 +17,7 @@ type TokenManager interface {
 	GetType() string
 	GetAppRef() *githubv1.AppReference
 	GetSecretBasicAuth() bool
+	GetSecretDataSources() []githubv1.SecretDataSource
 	GetInstallationID() int64
 	GetRefreshInterval() time.Duration
 	GetRetryInterval() time.Duration

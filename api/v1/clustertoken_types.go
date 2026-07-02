@@ -72,6 +72,9 @@ type ClusterTokenSpec struct {
 	RepositoryIDs []int64 `json:"repositoryIDs,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="!has(self.extraData) || !(has(self.basicAuth) && self.basicAuth) || self.extraData.all(e, !has(e.inline) || !('username' in e.inline || 'password' in e.inline))",message="extraData inline must not contain 'username' or 'password' when basicAuth is true"
+// +kubebuilder:validation:XValidation:rule="!has(self.extraData) || (has(self.basicAuth) && self.basicAuth) || self.extraData.all(e, !has(e.inline) || !('token' in e.inline))",message="extraData inline must not contain 'token' when basicAuth is false"
+// +kubebuilder:validation:XValidation:rule="!has(self.extraData) || self.extraData.all(e, !has(e.inline) || e.inline.all(k, k.matches('^[-._a-zA-Z0-9]+$')))",message="extraData inline keys must consist of alphanumerics, '-', '_' or '.'"
 type ClusterTokenSecretSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength:=253
@@ -95,6 +98,15 @@ type ClusterTokenSecretSpec struct {
 	// +optional
 	// Create a secret with 'username' and 'password' fields for HTTP Basic Auth rather than simply 'token'
 	BasicAuth bool `json:"basicAuth,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:MaxItems:=16
+	// Additional keys to project into the managed Secret, from inline values
+	// and/or referenced ConfigMaps/Secrets. A configMap/secret ref's namespace
+	// defaults to the target Secret's namespace when unset. Reserved keys
+	// ('username'/'password' when basicAuth is true, 'token' otherwise) are
+	// always overridden by the operator-managed values.
+	ExtraData []SecretDataSource `json:"extraData,omitempty"`
 }
 
 // ClusterTokenStatus defines the observed state of ClusterToken
@@ -171,6 +183,32 @@ func (t *ClusterToken) GetSecretAnnotations() map[string]string {
 
 func (t *ClusterToken) GetSecretBasicAuth() bool {
 	return t.Spec.Secret.BasicAuth
+}
+
+// GetSecretDataSources returns the extraData sources for this ClusterToken,
+// defaulting any configMap/secret ref's empty namespace to the target
+// Secret's namespace.
+func (t *ClusterToken) GetSecretDataSources() []SecretDataSource {
+	sources := t.Spec.Secret.ExtraData
+	if len(sources) == 0 {
+		return sources
+	}
+	defaultNamespace := t.Spec.Secret.Namespace
+	normalized := make([]SecretDataSource, len(sources))
+	for i, source := range sources {
+		normalized[i] = source
+		if source.ConfigMap != nil && source.ConfigMap.Namespace == "" {
+			ref := *source.ConfigMap
+			ref.Namespace = defaultNamespace
+			normalized[i].ConfigMap = &ref
+		}
+		if source.Secret != nil && source.Secret.Namespace == "" {
+			ref := *source.Secret
+			ref.Namespace = defaultNamespace
+			normalized[i].Secret = &ref
+		}
+	}
+	return normalized
 }
 
 func (t *ClusterToken) GetInstallationTokenOptions() *github.InstallationTokenOptions {

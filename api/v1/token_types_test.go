@@ -343,3 +343,36 @@ func TestToken_SetStatusTimestamps(t *testing.T) {
 		t.Error("CreatedAt should be before ExpiresAt")
 	}
 }
+
+func TestToken_GetSecretDataSources(t *testing.T) {
+	token := &v1.Token{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "team-a"},
+		Spec: v1.TokenSpec{
+			Secret: v1.TokenSecretSpec{
+				ExtraData: []v1.SecretDataSource{
+					{Inline: map[string]string{"ca.crt": "PEM"}},
+					{ConfigMap: &v1.SecretDataSourceRef{Name: "ca-bundle"}},
+					{Secret: &v1.SecretDataSourceRef{Name: "ca-key"}},
+				},
+			},
+		},
+	}
+
+	got := token.GetSecretDataSources()
+	if len(got) != 3 {
+		t.Fatalf("GetSecretDataSources() returned %d entries, want 3", len(got))
+	}
+	if got[0].Inline["ca.crt"] != "PEM" {
+		t.Errorf("inline entry = %v, want ca.crt=PEM", got[0].Inline)
+	}
+	if got[1].ConfigMap.Namespace != "team-a" {
+		t.Errorf("configMap ref namespace = %q, want forced to Token's own namespace %q", got[1].ConfigMap.Namespace, "team-a")
+	}
+	if got[2].Secret.Namespace != "team-a" {
+		t.Errorf("secret ref namespace = %q, want forced to Token's own namespace %q", got[2].Secret.Namespace, "team-a")
+	}
+
+	if got := (&v1.Token{}).GetSecretDataSources(); got != nil {
+		t.Errorf("GetSecretDataSources() on empty Token = %v, want nil", got)
+	}
+}

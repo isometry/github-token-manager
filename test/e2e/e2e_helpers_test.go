@@ -125,6 +125,26 @@ func (c *clientContext) waitForAppReconciliation(name, namespace string) {
 	}).Within(reconciliationTimeout).Should(Succeed())
 }
 
+// waitForTokenCondition waits for a Token's Ready condition to reach the given
+// status and reason. Unlike waitForTokenReconciliation (which hard-asserts
+// Ready=True), this also covers not-ready terminal states such as a
+// fail-closed extraData source.
+func (c *clientContext) waitForTokenCondition(name, namespace string, status metav1.ConditionStatus, reason string) {
+	Eventually(func(g Gomega) {
+		tokenObj := &gtmv1.Token{}
+		g.Expect(
+			c.client.Get(c.context, client.ObjectKey{
+				Name:      name,
+				Namespace: namespace,
+			}, tokenObj),
+		).NotTo(HaveOccurred())
+		ready := meta.FindStatusCondition(tokenObj.Status.Conditions, gtmv1.ConditionTypeReady)
+		g.Expect(ready).NotTo(BeNil())
+		g.Expect(ready.Status).To(Equal(status))
+		g.Expect(ready.Reason).To(Equal(reason))
+	}).Within(reconciliationTimeout).Should(Succeed())
+}
+
 // checkManagedSecret waits for a secret to be created and returns its initial token value
 func (c *clientContext) checkManagedSecret(
 	name, namespace string, //nolint:unparam
@@ -157,6 +177,37 @@ func (c *clientContext) checkManagedSecret(
 	}
 
 	return secretValue
+}
+
+// getSecret fetches and returns a Secret by name, failing the spec if it
+// cannot be retrieved. Use this (rather than checkManagedSecret) to assert
+// arbitrary extraData keys that aren't part of the fixed credential shape.
+func (c *clientContext) getSecret(name, namespace string) *corev1.Secret {
+	secret := &corev1.Secret{}
+	Expect(
+		c.client.Get(c.context, client.ObjectKey{
+			Name:      name,
+			Namespace: namespace,
+		}, secret),
+	).NotTo(HaveOccurred())
+	return secret
+}
+
+// waitForWarningEvent waits for a Warning Event with the given reason to be
+// recorded against the named object in namespace.
+func (c *clientContext) waitForWarningEvent(objName, namespace, reason string) {
+	Eventually(func(g Gomega) {
+		events := &corev1.EventList{}
+		g.Expect(c.client.List(c.context, events, client.InNamespace(namespace))).NotTo(HaveOccurred())
+		found := false
+		for _, e := range events.Items {
+			if e.InvolvedObject.Name == objName && e.Type == corev1.EventTypeWarning && e.Reason == reason {
+				found = true
+				break
+			}
+		}
+		g.Expect(found).To(BeTrue(), "expected a Warning event with reason %q for %q", reason, objName)
+	}).Within(reconciliationTimeout).Should(Succeed())
 }
 
 // checkManagedSecretRotation waits for a token to be refreshed and returns the refreshed token
@@ -218,12 +269,14 @@ func (c *clientContext) createToken(
 	name, namespace, secretName, appRefName string,
 	isBasicAuth bool,
 	refreshInterval time.Duration,
+	extraData ...gtmv1.SecretDataSource,
 ) error {
 	spec := gtmv1.TokenSpec{
 		RefreshInterval: metav1.Duration{Duration: refreshInterval},
 		Secret: gtmv1.TokenSecretSpec{
 			Name:      secretName,
 			BasicAuth: isBasicAuth,
+			ExtraData: extraData,
 		},
 		Repositories: []string{
 			testRepositoryName,
@@ -267,6 +320,7 @@ func (c *clientContext) createClusterToken(
 	name, secretName, targetNamespace string,
 	isBasicAuth bool,
 	refreshInterval time.Duration,
+	extraData ...gtmv1.SecretDataSource,
 ) error {
 	clusterToken := &gtmv1.ClusterToken{
 		TypeMeta: metav1.TypeMeta{
@@ -282,6 +336,7 @@ func (c *clientContext) createClusterToken(
 				Name:      secretName,
 				Namespace: targetNamespace,
 				BasicAuth: isBasicAuth,
+				ExtraData: extraData,
 			},
 			Repositories: []string{
 				testRepositoryName,
@@ -353,6 +408,29 @@ func (c *clientContext) deleteSecret(name, namespace string) error {
 		},
 	}
 	return c.client.Delete(c.context, secret)
+}
+
+// createConfigMap creates a ConfigMap with the supplied data map.
+func (c *clientContext) createConfigMap(name, namespace string, data map[string]string) error {
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+		Data: data,
+	}
+	return c.client.Create(c.context, configMap)
+}
+
+// deleteConfigMap deletes a ConfigMap by name.
+func (c *clientContext) deleteConfigMap(name, namespace string) error {
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      name,
+			Namespace: namespace,
+		},
+	}
+	return c.client.Delete(c.context, configMap)
 }
 
 // runCommand executes the provided command within this context

@@ -72,6 +72,10 @@ type TokenSpec struct {
 	RepositoryIDs []int64 `json:"repositoryIDs,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="!has(self.extraData) || !(has(self.basicAuth) && self.basicAuth) || self.extraData.all(e, !has(e.inline) || !('username' in e.inline || 'password' in e.inline))",message="extraData inline must not contain 'username' or 'password' when basicAuth is true"
+// +kubebuilder:validation:XValidation:rule="!has(self.extraData) || (has(self.basicAuth) && self.basicAuth) || self.extraData.all(e, !has(e.inline) || !('token' in e.inline))",message="extraData inline must not contain 'token' when basicAuth is false"
+// +kubebuilder:validation:XValidation:rule="!has(self.extraData) || self.extraData.all(e, !has(e.inline) || e.inline.all(k, k.matches('^[-._a-zA-Z0-9]+$')))",message="extraData inline keys must consist of alphanumerics, '-', '_' or '.'"
+// +kubebuilder:validation:XValidation:rule="!has(self.extraData) || self.extraData.all(e, (!has(e.configMap) || !has(e.configMap.namespace)) && (!has(e.secret) || !has(e.secret.namespace)))",message="extraData configMap/secret sources may not set namespace on a Token; Tokens may only reference sources in their own namespace"
 type TokenSecretSpec struct {
 	// +optional
 	// +kubebuilder:validation:MaxLength:=253
@@ -89,6 +93,14 @@ type TokenSecretSpec struct {
 	// +optional
 	// Create a secret with 'username' and 'password' fields for HTTP Basic Auth rather than simply 'token'
 	BasicAuth bool `json:"basicAuth,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:MaxItems:=16
+	// Additional keys to project into the managed Secret, from inline values
+	// and/or referenced ConfigMaps/Secrets in this Token's own namespace.
+	// Reserved keys ('username'/'password' when basicAuth is true, 'token'
+	// otherwise) are always overridden by the operator-managed values.
+	ExtraData []SecretDataSource `json:"extraData,omitempty"`
 }
 
 // TokenStatus defines the observed state of Token
@@ -165,6 +177,32 @@ func (t *Token) GetSecretAnnotations() map[string]string {
 
 func (t *Token) GetSecretBasicAuth() bool {
 	return t.Spec.Secret.BasicAuth
+}
+
+// GetSecretDataSources returns the extraData sources for this Token, with
+// every configMap/secret ref's namespace forced to the Token's own namespace
+// (Tokens may only reference sources in their own namespace; admission
+// already rejects an explicit namespace on a Token ref).
+func (t *Token) GetSecretDataSources() []SecretDataSource {
+	sources := t.Spec.Secret.ExtraData
+	if len(sources) == 0 {
+		return sources
+	}
+	normalized := make([]SecretDataSource, len(sources))
+	for i, source := range sources {
+		normalized[i] = source
+		if source.ConfigMap != nil {
+			ref := *source.ConfigMap
+			ref.Namespace = t.Namespace
+			normalized[i].ConfigMap = &ref
+		}
+		if source.Secret != nil {
+			ref := *source.Secret
+			ref.Namespace = t.Namespace
+			normalized[i].Secret = &ref
+		}
+	}
+	return normalized
 }
 
 func (t *Token) GetInstallationTokenOptions() *github.InstallationTokenOptions {
