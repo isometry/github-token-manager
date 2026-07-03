@@ -296,6 +296,98 @@ spec:
                         Create a secret with 'username' and 'password' fields
                         for HTTP Basic Auth rather than simply 'token'
                       type: boolean
+                    extraData:
+                      description: |-
+                        Additional keys to project into the managed Secret, from inline values
+                        and/or referenced ConfigMaps/Secrets in this Token's own namespace.
+                        Reserved keys ('username'/'password' when basicAuth is true, 'token'
+                        otherwise) are always overridden by the operator-managed values.
+                      items:
+                        description: |-
+                          SecretDataSource projects additional keys into a managed Secret from
+                          exactly one of an inline map, a ConfigMap, or another Secret. Entries are
+                          merged in list order; later entries win on key collision, and keys
+                          reserved by the token type (e.g. 'token', or 'username'/'password' under
+                          basicAuth) are always overridden by the operator-managed values.
+                        properties:
+                          configMap:
+                            description: Project keys from a ConfigMap.
+                            properties:
+                              keys:
+                                description: |-
+                                  Restrict projection to these keys. When empty, every key in the
+                                  referenced object is projected.
+                                items:
+                                  type: string
+                                type: array
+                              name:
+                                description: Name of the referenced ConfigMap or Secret.
+                                maxLength: 253
+                                type: string
+                              namespace:
+                                description: |-
+                                  Namespace of the referenced ConfigMap or Secret. ClusterToken defaults
+                                  this to the target Secret's namespace when empty. Token may not set
+                                  this field: Tokens may only reference sources in their own namespace.
+                                maxLength: 253
+                                type: string
+                              optional:
+                                description: |-
+                                  When false (the default), a missing or unreadable object, or a listed
+                                  key absent from it, fails the reconcile: the managed Secret is deleted
+                                  (or never created) and the (Cluster)Token is marked not-ready. When
+                                  true, the reference is skipped instead.
+                                type: boolean
+                            required:
+                              - name
+                            type: object
+                          inline:
+                            additionalProperties:
+                              type: string
+                            description: Static key/value pairs to merge in verbatim.
+                            maxProperties: 16
+                            type: object
+                          secret:
+                            description: Project keys from a Secret.
+                            properties:
+                              keys:
+                                description: |-
+                                  Restrict projection to these keys. When empty, every key in the
+                                  referenced object is projected.
+                                items:
+                                  type: string
+                                type: array
+                              name:
+                                description: Name of the referenced ConfigMap or Secret.
+                                maxLength: 253
+                                type: string
+                              namespace:
+                                description: |-
+                                  Namespace of the referenced ConfigMap or Secret. ClusterToken defaults
+                                  this to the target Secret's namespace when empty. Token may not set
+                                  this field: Tokens may only reference sources in their own namespace.
+                                maxLength: 253
+                                type: string
+                              optional:
+                                description: |-
+                                  When false (the default), a missing or unreadable object, or a listed
+                                  key absent from it, fails the reconcile: the managed Secret is deleted
+                                  (or never created) and the (Cluster)Token is marked not-ready. When
+                                  true, the reference is skipped instead.
+                                type: boolean
+                            required:
+                              - name
+                            type: object
+                        type: object
+                        x-kubernetes-validations:
+                          - message:
+                              exactly one of inline, configMap or secret must be
+                              set
+                            rule:
+                              (has(self.inline)?1:0)+(has(self.configMap)?1:0)+(has(self.secret)?1:0)
+                              == 1
+                      maxItems: 16
+                      type: array
                     labels:
                       additionalProperties:
                         type: string
@@ -308,6 +400,32 @@ spec:
                       maxLength: 253
                       type: string
                   type: object
+                  x-kubernetes-validations:
+                    - message:
+                        extraData inline must not contain 'username' or 'password'
+                        when basicAuth is true
+                      rule:
+                        "!has(self.extraData) || !(has(self.basicAuth) && self.basicAuth)
+                        || self.extraData.all(e, !has(e.inline) || !('username' in e.inline
+                        || 'password' in e.inline))"
+                    - message:
+                        extraData inline must not contain 'token' when basicAuth
+                        is false
+                      rule:
+                        "!has(self.extraData) || (has(self.basicAuth) && self.basicAuth)
+                        || self.extraData.all(e, !has(e.inline) || !('token' in e.inline))"
+                    - message:
+                        extraData inline keys must consist of alphanumerics, '-',
+                        '_' or '.'
+                      rule:
+                        "!has(self.extraData) || self.extraData.all(e, !has(e.inline)
+                        || e.inline.all(k, k.matches('^[-._a-zA-Z0-9]+$')))"
+                    - message:
+                        extraData configMap/secret sources may not set namespace
+                        on a Token; Tokens may only reference sources in their own namespace
+                      rule:
+                        "!has(self.extraData) || self.extraData.all(e, (!has(e.configMap)
+                        || !has(e.configMap.namespace)) && (!has(e.secret) || !has(e.secret.namespace)))"
               type: object
             status:
               description: TokenStatus defines the observed state of Token

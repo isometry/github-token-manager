@@ -26,6 +26,7 @@ const (
 	ReasonSecretCreate = "secret_create"
 	ReasonSecretUpdate = "secret_update"
 	ReasonStatusUpdate = "status_update"
+	ReasonExtraData    = "extra_data"
 )
 
 // Recorder holds all custom OTEL metric instruments for the operator.

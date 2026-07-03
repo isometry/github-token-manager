@@ -33,6 +33,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
@@ -64,8 +67,12 @@ const (
 	testToken1        = "token-1"
 	testToken2        = "token-2"
 	testToken3        = "token-3"
+	testToken4        = "token-4"
+	testToken5        = "token-5"
+	testToken6        = "token-6"
 	testClusterToken1 = "cluster-token-1"
 	testClusterToken2 = "cluster-token-2"
+	testClusterToken3 = "cluster-token-3"
 	testApp           = "test-app"
 
 	// Secret names
@@ -74,8 +81,17 @@ const (
 	testSecret3 = "secret-3"
 	testSecret4 = "secret-4"
 	testSecret5 = "secret-5"
+	testSecret6 = "secret-6"
+	testSecret7 = "secret-7"
+	testSecret8 = "secret-8"
+	testSecret9 = "secret-9"
 
 	testAppKeySecret = "test-app-key"
+
+	// extraData fixtures
+	testExtraDataConfigMap1 = "extra-data-configmap-1"
+	testExtraDataSecret1    = "extra-data-secret-1"
+	testExtraDataConfigMap2 = "extra-data-configmap-2"
 )
 
 // gtmConfig holds the GitHub App credentials captured from the Helm install
@@ -329,6 +345,101 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 		})
 	})
 
+	Context("Token CR extraData", func() {
+		It("merges inline, configMap and secret extraData sources", func() {
+			if !hasAppCredentials {
+				Skip("skipping tests - no valid GitHub App configuration provided")
+			}
+
+			By("creating a ConfigMap fixture with a projected key and a reserved key")
+			Expect(clientCtx.createConfigMap(testExtraDataConfigMap1, targetNamespace, map[string]string{
+				"ca.crt": "PEM-DATA",
+				"token":  "spoofed-token",
+			})).To(Succeed())
+
+			By("creating a Secret fixture with an allowlisted key and an excluded key")
+			Expect(clientCtx.createOpaqueSecret(testExtraDataSecret1, targetNamespace, map[string][]byte{
+				"tls.key":    []byte("KEY-DATA"),
+				"unused.txt": []byte("excluded"),
+			})).To(Succeed())
+
+			By("creating a Token resource with inline, configMap and secret extraData")
+			Expect(clientCtx.createToken(testToken4, targetNamespace, testSecret6, "", false, tokenRefreshInterval,
+				gtmv1.SecretDataSource{Inline: map[string]string{"app": "demo"}},
+				gtmv1.SecretDataSource{ConfigMap: &gtmv1.SecretDataSourceRef{Name: testExtraDataConfigMap1}},
+				gtmv1.SecretDataSource{Secret: &gtmv1.SecretDataSourceRef{Name: testExtraDataSecret1, Keys: []string{"tls.key"}}},
+			)).To(Succeed())
+
+			By("waiting for Token reconciliation")
+			clientCtx.waitForTokenReconciliation(testToken4, targetNamespace)
+
+			By("checking the managed Secret contains the merged extraData and the real credential")
+			secret := clientCtx.getSecret(testSecret6, targetNamespace)
+			Expect(secret.Data).To(HaveKeyWithValue("app", []byte("demo")))
+			Expect(secret.Data).To(HaveKeyWithValue("ca.crt", []byte("PEM-DATA")))
+			Expect(secret.Data).To(HaveKeyWithValue("tls.key", []byte("KEY-DATA")))
+			Expect(secret.Data).NotTo(HaveKey("unused.txt"))
+			Expect(secret.Data).To(HaveKey("token"))
+			Expect(string(secret.Data["token"])).NotTo(Equal("spoofed-token"))
+
+			By("checking that the managed token value is valid")
+			Expect(checkToken(string(secret.Data["token"]))).To(Succeed())
+
+			By("checking a Warning event was recorded for the reserved key")
+			clientCtx.waitForWarningEvent(testToken4, targetNamespace, "ReservedKeyIgnored")
+
+			By("cleaning up")
+			Expect(clientCtx.deleteToken(testToken4, targetNamespace)).To(Succeed())
+			Expect(clientCtx.deleteConfigMap(testExtraDataConfigMap1, targetNamespace)).To(Succeed())
+			Expect(clientCtx.deleteSecret(testExtraDataSecret1, targetNamespace)).To(Succeed())
+		})
+
+		It("skips an optional missing extraData source", func() {
+			if !hasAppCredentials {
+				Skip("skipping tests - no valid GitHub App configuration provided")
+			}
+
+			By("creating a Token resource with an optional reference to a nonexistent ConfigMap")
+			Expect(clientCtx.createToken(testToken5, targetNamespace, testSecret7, "", false, tokenRefreshInterval,
+				gtmv1.SecretDataSource{ConfigMap: &gtmv1.SecretDataSourceRef{Name: "does-not-exist", Optional: true}},
+			)).To(Succeed())
+
+			By("waiting for Token reconciliation")
+			clientCtx.waitForTokenReconciliation(testToken5, targetNamespace)
+
+			By("checking the managed Secret only contains the managed credential")
+			secret := clientCtx.getSecret(testSecret7, targetNamespace)
+			Expect(secret.Data).To(HaveKey("token"))
+			Expect(secret.Data).To(HaveLen(1))
+
+			By("deleting the Token resource")
+			Expect(clientCtx.deleteToken(testToken5, targetNamespace)).To(Succeed())
+		})
+
+		It("fails closed when a required extraData source is missing", func() {
+			By("creating a Token resource with a required reference to a nonexistent ConfigMap")
+			Expect(clientCtx.createToken(testToken6, targetNamespace, testSecret8, "", false, tokenRefreshInterval,
+				gtmv1.SecretDataSource{ConfigMap: &gtmv1.SecretDataSourceRef{Name: "does-not-exist"}},
+			)).To(Succeed())
+
+			By("checking the Token is marked not-ready due to the unavailable source")
+			clientCtx.waitForTokenCondition(testToken6, targetNamespace, metav1.ConditionFalse, "SourceUnavailable")
+
+			By("checking the managed Secret was never created")
+			Consistently(func(g Gomega) {
+				secret := &corev1.Secret{}
+				err := clientCtx.client.Get(clientCtx.context, client.ObjectKey{
+					Name:      testSecret8,
+					Namespace: targetNamespace,
+				}, secret)
+				g.Expect(apierrors.IsNotFound(err)).To(BeTrue())
+			}).Within(5 * time.Second).Should(Succeed())
+
+			By("deleting the Token resource")
+			Expect(clientCtx.deleteToken(testToken6, targetNamespace)).To(Succeed())
+		})
+	})
+
 	Context("ClusterToken CR", func() {
 		It("manages Secrets of type github.as-code.io/token", func() {
 			if !hasAppCredentials {
@@ -404,6 +515,33 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 
 			By("deleting the ClusterToken resource")
 			Expect(clientCtx.deleteClusterToken(testClusterToken2)).To(Succeed())
+		})
+
+		It("defaults an extraData configMap ref's namespace to the target Secret's namespace", func() {
+			if !hasAppCredentials {
+				Skip("skipping tests - no valid GitHub App configuration provided")
+			}
+
+			By("creating a ConfigMap fixture in the target namespace")
+			Expect(clientCtx.createConfigMap(testExtraDataConfigMap2, targetNamespace, map[string]string{
+				"ca.crt": "PEM-DATA",
+			})).To(Succeed())
+
+			By("creating a ClusterToken resource with a configMap ref that omits namespace")
+			Expect(clientCtx.createClusterToken(testClusterToken3, testSecret9, targetNamespace, false, tokenRefreshInterval,
+				gtmv1.SecretDataSource{ConfigMap: &gtmv1.SecretDataSourceRef{Name: testExtraDataConfigMap2}},
+			)).To(Succeed())
+
+			By("waiting for ClusterToken reconciliation")
+			clientCtx.waitForClusterTokenReconciliation(testClusterToken3)
+
+			By("checking the managed Secret contains the key projected from the defaulted namespace")
+			secret := clientCtx.getSecret(testSecret9, targetNamespace)
+			Expect(secret.Data).To(HaveKeyWithValue("ca.crt", []byte("PEM-DATA")))
+
+			By("cleaning up")
+			Expect(clientCtx.deleteClusterToken(testClusterToken3)).To(Succeed())
+			Expect(clientCtx.deleteConfigMap(testExtraDataConfigMap2, targetNamespace)).To(Succeed())
 		})
 	})
 

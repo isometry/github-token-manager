@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -33,6 +34,11 @@ import (
 // reconcile helper can take a single receiver value.
 type TokenReconcilerBase struct {
 	client.Client
+	// Reader is an uncached client used to resolve extraData ConfigMap/Secret
+	// sources live on every reconcile, rather than caching every such object
+	// cluster-wide.
+	Reader   client.Reader
+	Recorder record.EventRecorder
 	Metrics  *metrics.Recorder
 	Registry *ghapp.Registry
 }
@@ -76,6 +82,8 @@ func reconcileTokenLike[T any, PT interface {
 
 	options := []tm.Option{
 		tm.WithClient(r.Client),
+		tm.WithAPIReader(r.Reader),
+		tm.WithEventRecorder(r.Recorder),
 		tm.WithGHApp(resolution.Client),
 		tm.WithLogger(logger),
 		tm.WithMetrics(r.Metrics),

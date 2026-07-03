@@ -356,3 +356,36 @@ func TestClusterToken_SetStatusTimestamps(t *testing.T) {
 		t.Error("CreatedAt should be before ExpiresAt")
 	}
 }
+
+func TestClusterToken_GetSecretDataSources(t *testing.T) {
+	token := &v1.ClusterToken{
+		Spec: v1.ClusterTokenSpec{
+			Secret: v1.ClusterTokenSecretSpec{
+				Namespace: "target-namespace",
+				ExtraData: []v1.SecretDataSource{
+					{Inline: map[string]string{"ca.crt": "PEM"}},
+					{ConfigMap: &v1.SecretDataSourceRef{Name: "ca-bundle"}},
+					{ConfigMap: &v1.SecretDataSourceRef{Name: "ca-bundle", Namespace: "shared-ns"}},
+				},
+			},
+		},
+	}
+
+	got := token.GetSecretDataSources()
+	if len(got) != 3 {
+		t.Fatalf("GetSecretDataSources() returned %d entries, want 3", len(got))
+	}
+	if got[0].Inline["ca.crt"] != "PEM" {
+		t.Errorf("inline entry = %v, want ca.crt=PEM", got[0].Inline)
+	}
+	if got[1].ConfigMap.Namespace != "target-namespace" {
+		t.Errorf("unset ref namespace = %q, want defaulted to target Secret namespace %q", got[1].ConfigMap.Namespace, "target-namespace")
+	}
+	if got[2].ConfigMap.Namespace != "shared-ns" {
+		t.Errorf("explicit ref namespace = %q, want preserved as %q", got[2].ConfigMap.Namespace, "shared-ns")
+	}
+
+	if got := (&v1.ClusterToken{}).GetSecretDataSources(); got != nil {
+		t.Errorf("GetSecretDataSources() on empty ClusterToken = %v, want nil", got)
+	}
+}

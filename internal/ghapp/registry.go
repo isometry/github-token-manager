@@ -143,7 +143,7 @@ func (r *Registry) ForApp(ctx context.Context, key Key, version string, cfg ghai
 	}
 	client, err := r.factory(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("App %s/%s: %w", key.Namespace, key.Name, err)
+		return nil, fmt.Errorf("build client for App %s/%s: %w", key.Namespace, key.Name, err)
 	}
 	r.clients[key] = cachedClient{client: client, version: version}
 	return client, nil
