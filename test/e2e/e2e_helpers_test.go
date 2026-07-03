@@ -36,10 +36,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v88/github"
 	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega" //nolint:staticcheck
-	"golang.org/x/oauth2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -537,14 +536,11 @@ func generateTestKey() (string, error) {
 func checkToken(repository, token string) error {
 	ctx := context.Background()
 
-	// Create OAuth2 token source
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-
 	// Create GitHub client
-	client := github.NewClient(tc)
+	client, err := github.NewClient(github.WithAuthToken(token))
+	if err != nil {
+		return fmt.Errorf("failed to create GitHub client: %w", err)
+	}
 
 	// Parse repository string (format: "owner/repo")
 	parts := strings.Split(repository, "/")
@@ -554,7 +550,7 @@ func checkToken(repository, token string) error {
 	owner, repo := parts[0], parts[1]
 
 	// Test the /repos/OWNER/REPO/readme endpoint to validate content read permissions
-	_, _, err := client.Repositories.GetReadme(ctx, owner, repo, nil)
+	_, _, err = client.Repositories.GetReadme(ctx, owner, repo, nil)
 	if err != nil {
 		return fmt.Errorf("failed to validate token for repository %s (readme endpoint): %w", repository, err)
 	}

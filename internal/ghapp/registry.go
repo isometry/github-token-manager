@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/isometry/ghait/v84"
+	"github.com/isometry/ghait/v88"
 )
 
 // Key identifies an App in the registry. The zero value is reserved for the

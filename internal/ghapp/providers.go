@@ -11,8 +11,8 @@ package ghapp
 // The file provider needs no import here: ghait registers it by default
 // unless built with ghait.no_file.
 import (
-	_ "github.com/isometry/ghait/v84/provider/aws"
-	_ "github.com/isometry/ghait/v84/provider/azure"
-	_ "github.com/isometry/ghait/v84/provider/gcp"
-	_ "github.com/isometry/ghait/v84/provider/vault"
+	_ "github.com/isometry/ghait/v88/provider/aws"
+	_ "github.com/isometry/ghait/v88/provider/azure"
+	_ "github.com/isometry/ghait/v88/provider/gcp"
+	_ "github.com/isometry/ghait/v88/provider/vault"
 )

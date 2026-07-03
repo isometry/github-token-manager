@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/google/go-github/v84/github"
-	"github.com/isometry/ghait/v84"
+	"github.com/google/go-github/v88/github"
+	"github.com/isometry/ghait/v88"
 )
 
 // fakeGHAIT is a minimal implementation of [ghait.GHAIT] used only to

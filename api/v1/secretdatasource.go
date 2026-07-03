@@ -66,8 +66,9 @@ type SecretDataSourceRef struct {
 }
 
 // normalizeDataSources returns a copy of sources with every configMap/secret
-// ref's namespace rewritten by resolveNamespace. Refs are deep-copied so the
-// result never aliases the caller's spec.
+// ref's namespace rewritten by resolveNamespace. Each ref struct is copied so
+// the rewrite never mutates the caller's spec; nested slices/maps (Keys,
+// Inline) remain shared and are treated as read-only downstream.
 func normalizeDataSources(sources []SecretDataSource, resolveNamespace func(existing string) string) []SecretDataSource {
 	if len(sources) == 0 {
 		return sources
