@@ -24,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -207,7 +208,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() {
-		if err := metricsRecorder.Shutdown(context.Background()); err != nil {
+		// The signal context is already cancelled by the time this runs;
+		// derive an uncancelled-but-bounded context for the final flush.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if err := metricsRecorder.Shutdown(shutdownCtx); err != nil {
 			setupLog.Error(err, "shutting down meter provider")
 		}
 	}()

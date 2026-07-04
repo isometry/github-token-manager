@@ -35,7 +35,7 @@ func countingFactory() (FactoryFunc, *int) {
 
 func TestRegistry_Startup_NoConfig(t *testing.T) {
 	r := NewRegistry("gtm-system", nil)
-	_, err := r.Startup(context.Background())
+	_, err := r.Startup(t.Context())
 	if !errors.Is(err, ErrNoStartupConfig) {
 		t.Fatalf("Startup() err = %v, want ErrNoStartupConfig", err)
 	}
@@ -46,11 +46,11 @@ func TestRegistry_Startup_CachesAcrossCalls(t *testing.T) {
 	fac, calls := countingFactory()
 	r := NewRegistry("gtm-system", cfg, WithFactory(fac))
 
-	c1, err := r.Startup(context.Background())
+	c1, err := r.Startup(t.Context())
 	if err != nil {
 		t.Fatalf("Startup() err = %v", err)
 	}
-	c2, err := r.Startup(context.Background())
+	c2, err := r.Startup(t.Context())
 	if err != nil {
 		t.Fatalf("Startup() 2nd call err = %v", err)
 	}
@@ -68,7 +68,7 @@ func TestRegistry_ForApp_CachesByVersion(t *testing.T) {
 
 	key := Key{Namespace: "team-a", Name: "prod"}
 	cfg := &OperatorConfig{AppID: 42, InstallationID: 7, Provider: "file", Key: "inline"}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	c1, err := r.ForApp(ctx, key, "1", cfg)
 	if err != nil {
@@ -96,7 +96,7 @@ func TestRegistry_ForApp_CachesByVersion(t *testing.T) {
 
 func TestRegistry_ForApp_RejectsStartupKey(t *testing.T) {
 	r := NewRegistry("gtm-system", nil)
-	_, err := r.ForApp(context.Background(), StartupKey, "", &OperatorConfig{})
+	_, err := r.ForApp(t.Context(), StartupKey, "", &OperatorConfig{})
 	if err == nil {
 		t.Fatalf("ForApp(StartupKey) returned no error")
 	}
@@ -108,7 +108,7 @@ func TestRegistry_Invalidate_EvictsEntry(t *testing.T) {
 
 	key := Key{Namespace: "team-a", Name: "prod"}
 	cfg := &OperatorConfig{AppID: 42, Provider: "file", Key: "inline"}
-	ctx := context.Background()
+	ctx := t.Context()
 
 	if _, err := r.ForApp(ctx, key, "5", cfg); err != nil {
 		t.Fatalf("ForApp() err = %v", err)
@@ -130,7 +130,7 @@ func TestRegistry_FactoryError_Propagates(t *testing.T) {
 			return nil, sentinel
 		}),
 	)
-	_, err := r.Startup(context.Background())
+	_, err := r.Startup(t.Context())
 	if !errors.Is(err, sentinel) {
 		t.Fatalf("err = %v, want to wrap %v", err, sentinel)
 	}
