@@ -119,7 +119,7 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 	var hasAppCredentials bool
 	var capturedConfig *gtmConfig
 	var k8sClient client.Client
-	ctx := context.Background()
+	ctx := context.Background() // suite-scoped; Ginkgo has no suite-lifetime context
 	var clientCtx *clientContext
 	checkToken := newTokenValidator(testRepository)
 
@@ -176,8 +176,6 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 
 	Context("Helm Chart", func() {
 		It("installs cleanly", func() {
-			ctx = context.Background()
-
 			By("checking for valid GitHub App credentials")
 			projectDir, err := getProjectDir()
 			Expect(err).NotTo(HaveOccurred())
@@ -365,9 +363,9 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 
 			By("creating a Token resource with inline, configMap and secret extraData")
 			Expect(clientCtx.createToken(testToken4, targetNamespace, testSecret6, "", false, tokenRefreshInterval,
-				gtmv1.SecretDataSource{Inline: map[string]string{"app": "demo"}},
-				gtmv1.SecretDataSource{ConfigMap: &gtmv1.SecretDataSourceRef{Name: testExtraDataConfigMap1}},
-				gtmv1.SecretDataSource{Secret: &gtmv1.SecretDataSourceRef{Name: testExtraDataSecret1, Keys: []string{"tls.key"}}},
+				gtmv1.LocalSecretDataSource{Inline: map[string]string{"app": "demo"}},
+				gtmv1.LocalSecretDataSource{ConfigMap: &gtmv1.LocalSecretDataSourceRef{Name: testExtraDataConfigMap1}},
+				gtmv1.LocalSecretDataSource{Secret: &gtmv1.LocalSecretDataSourceRef{Name: testExtraDataSecret1, Keys: []string{"tls.key"}}},
 			)).To(Succeed())
 
 			By("waiting for Token reconciliation")
@@ -388,9 +386,19 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 			By("checking a Warning event was recorded for the reserved key")
 			clientCtx.waitForWarningEvent(testToken4, targetNamespace, "ReservedKeyIgnored")
 
+			By("deleting the source ConfigMap and verifying the degraded condition")
+			Expect(clientCtx.deleteConfigMap(testExtraDataConfigMap1, targetNamespace)).To(Succeed())
+			clientCtx.waitForTokenCondition(testToken4, targetNamespace,
+				gtmv1.ConditionTypeExtraDataDegraded, metav1.ConditionTrue, gtmv1.ReasonSourceUnavailable)
+
+			By("checking the managed Secret retains the last-known-good extraData alongside a valid credential")
+			secret = clientCtx.getSecret(testSecret6, targetNamespace)
+			Expect(secret.Data).To(HaveKeyWithValue("ca.crt", []byte("PEM-DATA")))
+			Expect(secret.Data).To(HaveKey("token"))
+			Expect(checkToken(string(secret.Data["token"]))).To(Succeed())
+
 			By("cleaning up")
 			Expect(clientCtx.deleteToken(testToken4, targetNamespace)).To(Succeed())
-			Expect(clientCtx.deleteConfigMap(testExtraDataConfigMap1, targetNamespace)).To(Succeed())
 			Expect(clientCtx.deleteSecret(testExtraDataSecret1, targetNamespace)).To(Succeed())
 		})
 
@@ -401,7 +409,7 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 
 			By("creating a Token resource with an optional reference to a nonexistent ConfigMap")
 			Expect(clientCtx.createToken(testToken5, targetNamespace, testSecret7, "", false, tokenRefreshInterval,
-				gtmv1.SecretDataSource{ConfigMap: &gtmv1.SecretDataSourceRef{Name: "does-not-exist", Optional: true}},
+				gtmv1.LocalSecretDataSource{ConfigMap: &gtmv1.LocalSecretDataSourceRef{Name: "does-not-exist", Optional: true}},
 			)).To(Succeed())
 
 			By("waiting for Token reconciliation")
@@ -412,18 +420,23 @@ var _ = Describe("GitHub Token Manager", Ordered, func() {
 			Expect(secret.Data).To(HaveKey("token"))
 			Expect(secret.Data).To(HaveLen(1))
 
+			By("checking the skipped optional source is surfaced on the ExtraDataDegraded condition")
+			clientCtx.waitForTokenCondition(testToken5, targetNamespace,
+				gtmv1.ConditionTypeExtraDataDegraded, metav1.ConditionTrue, gtmv1.ReasonKeysMissing)
+
 			By("deleting the Token resource")
 			Expect(clientCtx.deleteToken(testToken5, targetNamespace)).To(Succeed())
 		})
 
-		It("fails closed when a required extraData source is missing", func() {
+		It("blocks Secret creation when a required extraData source is missing", func() {
 			By("creating a Token resource with a required reference to a nonexistent ConfigMap")
 			Expect(clientCtx.createToken(testToken6, targetNamespace, testSecret8, "", false, tokenRefreshInterval,
-				gtmv1.SecretDataSource{ConfigMap: &gtmv1.SecretDataSourceRef{Name: "does-not-exist"}},
+				gtmv1.LocalSecretDataSource{ConfigMap: &gtmv1.LocalSecretDataSourceRef{Name: "does-not-exist"}},
 			)).To(Succeed())
 
 			By("checking the Token is marked not-ready due to the unavailable source")
-			clientCtx.waitForTokenCondition(testToken6, targetNamespace, metav1.ConditionFalse, "SourceUnavailable")
+			clientCtx.waitForTokenCondition(testToken6, targetNamespace,
+				gtmv1.ConditionTypeReady, metav1.ConditionFalse, gtmv1.ReasonSourceUnavailable)
 
 			By("checking the managed Secret was never created")
 			Consistently(func(g Gomega) {

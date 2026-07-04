@@ -9,6 +9,14 @@ const (
 	// spec.validateKey is false.
 	ConditionTypeKeyValid = "KeyValid"
 
+	// ConditionTypeExtraDataDegraded is an abnormal-true (kstatus-style)
+	// condition: set True when spec.secret.extraData did not resolve in full
+	// on the last reconcile — reason KeysMissing when optional listed keys
+	// are absent, or reason SourceUnavailable while the managed Secret
+	// serves last-known-good extraData because a required source cannot be
+	// read. Absent when extraData resolves cleanly or none is configured.
+	ConditionTypeExtraDataDegraded = "ExtraDataDegraded"
+
 	// Condition reasons used by the Token and ClusterToken controllers when
 	// resolving spec.appRef.
 
@@ -30,4 +38,15 @@ const (
 	// ReasonInvalidKey indicates the resolved key material is missing,
 	// empty, or not a usable PEM-encoded RSA private key.
 	ReasonInvalidKey = "InvalidKey"
+
+	// Condition reasons used with ConditionTypeExtraDataDegraded (and, for
+	// SourceUnavailable, with ConditionTypeReady when Secret creation is
+	// blocked).
+
+	// ReasonKeysMissing indicates optional extraData keys were absent from
+	// their source and skipped.
+	ReasonKeysMissing = "KeysMissing"
+	// ReasonSourceUnavailable indicates a required extraData source could not
+	// be resolved.
+	ReasonSourceUnavailable = "SourceUnavailable"
 )

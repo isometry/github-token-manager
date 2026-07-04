@@ -75,7 +75,6 @@ type TokenSpec struct {
 // +kubebuilder:validation:XValidation:rule="!has(self.extraData) || !(has(self.basicAuth) && self.basicAuth) || self.extraData.all(e, !has(e.inline) || !('username' in e.inline || 'password' in e.inline))",message="extraData inline must not contain 'username' or 'password' when basicAuth is true"
 // +kubebuilder:validation:XValidation:rule="!has(self.extraData) || (has(self.basicAuth) && self.basicAuth) || self.extraData.all(e, !has(e.inline) || !('token' in e.inline))",message="extraData inline must not contain 'token' when basicAuth is false"
 // +kubebuilder:validation:XValidation:rule="!has(self.extraData) || self.extraData.all(e, !has(e.inline) || e.inline.all(k, k.matches('^[-._a-zA-Z0-9]+$')))",message="extraData inline keys must consist of alphanumerics, '-', '_' or '.'"
-// +kubebuilder:validation:XValidation:rule="!has(self.extraData) || self.extraData.all(e, (!has(e.configMap) || !has(e.configMap.namespace)) && (!has(e.secret) || !has(e.secret.namespace)))",message="extraData configMap/secret sources may not set namespace on a Token; Tokens may only reference sources in their own namespace"
 type TokenSecretSpec struct {
 	// +optional
 	// +kubebuilder:validation:MaxLength:=253
@@ -100,7 +99,7 @@ type TokenSecretSpec struct {
 	// and/or referenced ConfigMaps/Secrets in this Token's own namespace.
 	// Reserved keys ('username'/'password' when basicAuth is true, 'token'
 	// otherwise) are always overridden by the operator-managed values.
-	ExtraData []SecretDataSource `json:"extraData,omitempty"`
+	ExtraData []LocalSecretDataSource `json:"extraData,omitempty"`
 }
 
 // TokenStatus defines the observed state of Token
@@ -179,14 +178,19 @@ func (t *Token) GetSecretBasicAuth() bool {
 	return t.Spec.Secret.BasicAuth
 }
 
-// GetSecretDataSources returns the extraData sources for this Token, with
-// every configMap/secret ref's namespace forced to the Token's own namespace
-// (Tokens may only reference sources in their own namespace; admission
-// already rejects an explicit namespace on a Token ref).
+// GetSecretDataSources returns the extraData sources for this Token,
+// converted to the common SecretDataSource shape with every configMap/secret
+// ref placed in the Token's own namespace (the LocalSecretDataSourceRef
+// schema has no namespace field, so no other namespace is expressible).
 func (t *Token) GetSecretDataSources() []SecretDataSource {
-	return normalizeDataSources(t.Spec.Secret.ExtraData, func(string) string {
-		return t.Namespace
-	})
+	if len(t.Spec.Secret.ExtraData) == 0 {
+		return nil
+	}
+	sources := make([]SecretDataSource, len(t.Spec.Secret.ExtraData))
+	for i, source := range t.Spec.Secret.ExtraData {
+		sources[i] = source.toSecretDataSource(t.Namespace)
+	}
+	return sources
 }
 
 func (t *Token) GetInstallationTokenOptions() *github.InstallationTokenOptions {
@@ -228,6 +232,10 @@ func (t *Token) GetStatusConditions() []metav1.Condition {
 
 func (t *Token) SetStatusCondition(condition metav1.Condition) (changed bool) {
 	return meta.SetStatusCondition(&t.Status.Conditions, condition)
+}
+
+func (t *Token) RemoveStatusCondition(conditionType string) (changed bool) {
+	return meta.RemoveStatusCondition(&t.Status.Conditions, conditionType)
 }
 
 // +kubebuilder:object:root=true

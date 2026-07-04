@@ -1,8 +1,7 @@
 package tokenmanager
 
 import (
-	"context"
-	"errors"
+	"strings"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -20,7 +19,9 @@ func newFakeReader(objs ...runtime.Object) *fake.ClientBuilder {
 	return fake.NewClientBuilder().WithScheme(scheme).WithRuntimeObjects(objs...)
 }
 
-func newTestOwner(basicAuth bool, sources ...githubv1.SecretDataSource) TokenManager {
+// newTestOwner builds a Token in namespace "ns"; its extraData refs resolve
+// against that namespace (Tokens may only reference same-namespace sources).
+func newTestOwner(basicAuth bool, sources ...githubv1.LocalSecretDataSource) TokenManager {
 	return &githubv1.Token{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-token", Namespace: "ns"},
 		Spec: githubv1.TokenSpec{
@@ -33,14 +34,17 @@ func newTestOwner(basicAuth bool, sources ...githubv1.SecretDataSource) TokenMan
 }
 
 func TestResolveExtraData_Inline(t *testing.T) {
-	owner := newTestOwner(false, githubv1.SecretDataSource{
+	owner := newTestOwner(false, githubv1.LocalSecretDataSource{
 		Inline: map[string]string{"ca.crt": "PEM"},
 	})
 	s := &tokenSecret{owner: owner}
 
-	got, err := s.resolveExtraData(context.Background())
+	got, missing, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
+	}
+	if len(missing) != 0 {
+		t.Errorf("missing = %v, want none", missing)
 	}
 	if string(got["ca.crt"]) != "PEM" {
 		t.Errorf("got %v, want ca.crt=PEM", got)
@@ -52,12 +56,12 @@ func TestResolveExtraData_ConfigMap_AllKeys(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "ca-bundle", Namespace: "ns"},
 		Data:       map[string]string{"ca.crt": "PEM", "other.txt": "ignored-not"},
 	}
-	owner := newTestOwner(false, githubv1.SecretDataSource{
-		ConfigMap: &githubv1.SecretDataSourceRef{Name: "ca-bundle", Namespace: "ns"},
+	owner := newTestOwner(false, githubv1.LocalSecretDataSource{
+		ConfigMap: &githubv1.LocalSecretDataSourceRef{Name: "ca-bundle"},
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader(cm).Build()}
 
-	got, err := s.resolveExtraData(context.Background())
+	got, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -71,12 +75,12 @@ func TestResolveExtraData_ConfigMap_Allowlist(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "ca-bundle", Namespace: "ns"},
 		Data:       map[string]string{"ca.crt": "PEM", "other.txt": "excluded"},
 	}
-	owner := newTestOwner(false, githubv1.SecretDataSource{
-		ConfigMap: &githubv1.SecretDataSourceRef{Name: "ca-bundle", Namespace: "ns", Keys: []string{"ca.crt"}},
+	owner := newTestOwner(false, githubv1.LocalSecretDataSource{
+		ConfigMap: &githubv1.LocalSecretDataSourceRef{Name: "ca-bundle", Keys: []string{"ca.crt"}},
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader(cm).Build()}
 
-	got, err := s.resolveExtraData(context.Background())
+	got, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -90,12 +94,12 @@ func TestResolveExtraData_Secret_AllKeys(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "ca-key", Namespace: "ns"},
 		Data:       map[string][]byte{"tls.key": []byte("KEY")},
 	}
-	owner := newTestOwner(false, githubv1.SecretDataSource{
-		Secret: &githubv1.SecretDataSourceRef{Name: "ca-key", Namespace: "ns"},
+	owner := newTestOwner(false, githubv1.LocalSecretDataSource{
+		Secret: &githubv1.LocalSecretDataSourceRef{Name: "ca-key"},
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader(secret).Build()}
 
-	got, err := s.resolveExtraData(context.Background())
+	got, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -104,33 +108,36 @@ func TestResolveExtraData_Secret_AllKeys(t *testing.T) {
 	}
 }
 
-func TestResolveExtraData_OptionalMissingSource_Skips(t *testing.T) {
-	owner := newTestOwner(false, githubv1.SecretDataSource{
-		ConfigMap: &githubv1.SecretDataSourceRef{Name: "missing", Namespace: "ns", Optional: true},
+func TestResolveExtraData_OptionalMissingSource_SkipsAndReports(t *testing.T) {
+	owner := newTestOwner(false, githubv1.LocalSecretDataSource{
+		ConfigMap: &githubv1.LocalSecretDataSourceRef{Name: "missing", Optional: true},
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader().Build(), recorder: record.NewFakeRecorder(10)}
 
-	got, err := s.resolveExtraData(context.Background())
+	got, missing, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v, want nil (optional source skipped)", err)
 	}
 	if len(got) != 0 {
 		t.Errorf("got %v, want empty map", got)
 	}
+	if len(missing) != 1 || missing[0] != "configMap ns/missing" {
+		t.Errorf("missing = %v, want the absent optional source reported", missing)
+	}
 }
 
 func TestResolveExtraData_RequiredMissingSource_Fails(t *testing.T) {
-	owner := newTestOwner(false, githubv1.SecretDataSource{
-		ConfigMap: &githubv1.SecretDataSourceRef{Name: "missing", Namespace: "ns"},
+	owner := newTestOwner(false, githubv1.LocalSecretDataSource{
+		ConfigMap: &githubv1.LocalSecretDataSourceRef{Name: "missing"},
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader().Build()}
 
-	_, err := s.resolveExtraData(context.Background())
+	_, _, err := s.resolveExtraData(t.Context())
 	if err == nil {
 		t.Fatal("resolveExtraData() error = nil, want required-source error")
 	}
-	if !errors.As(err, new(*requiredSourceError)) {
-		t.Errorf("resolveExtraData() error = %v, want *requiredSourceError", err)
+	if !strings.Contains(err.Error(), "required extraData source configMap ns/missing") {
+		t.Errorf("resolveExtraData() error = %v, want it to identify the required source", err)
 	}
 }
 
@@ -139,42 +146,45 @@ func TestResolveExtraData_RequiredAllowlistKeyMissing_Fails(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "ca-bundle", Namespace: "ns"},
 		Data:       map[string]string{"ca.crt": "PEM"},
 	}
-	owner := newTestOwner(false, githubv1.SecretDataSource{
-		ConfigMap: &githubv1.SecretDataSourceRef{Name: "ca-bundle", Namespace: "ns", Keys: []string{"missing.key"}},
+	owner := newTestOwner(false, githubv1.LocalSecretDataSource{
+		ConfigMap: &githubv1.LocalSecretDataSourceRef{Name: "ca-bundle", Keys: []string{"missing.key"}},
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader(cm).Build()}
 
-	_, err := s.resolveExtraData(context.Background())
+	_, _, err := s.resolveExtraData(t.Context())
 	if err == nil {
-		t.Fatal("resolveExtraData() error = nil, want required-source error")
+		t.Fatal("resolveExtraData() error = nil, want required-key error")
 	}
-	if !errors.As(err, new(*requiredSourceError)) {
-		t.Errorf("resolveExtraData() error = %v, want *requiredSourceError", err)
+	if !strings.Contains(err.Error(), `key "missing.key" not found`) {
+		t.Errorf("resolveExtraData() error = %v, want it to identify the missing key", err)
 	}
 }
 
-func TestResolveExtraData_OptionalAllowlistKeyMissing_Skips(t *testing.T) {
+func TestResolveExtraData_OptionalAllowlistKeyMissing_SkipsPerKey(t *testing.T) {
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: "ca-bundle", Namespace: "ns"},
 		Data:       map[string]string{"ca.crt": "PEM"},
 	}
-	owner := newTestOwner(false, githubv1.SecretDataSource{
-		ConfigMap: &githubv1.SecretDataSourceRef{Name: "ca-bundle", Namespace: "ns", Keys: []string{"missing.key"}, Optional: true},
+	owner := newTestOwner(false, githubv1.LocalSecretDataSource{
+		ConfigMap: &githubv1.LocalSecretDataSourceRef{Name: "ca-bundle", Keys: []string{"ca.crt", "missing.key"}, Optional: true},
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader(cm).Build(), recorder: record.NewFakeRecorder(10)}
 
-	got, err := s.resolveExtraData(context.Background())
+	got, missing, err := s.resolveExtraData(t.Context())
 	if err != nil {
-		t.Fatalf("resolveExtraData() error = %v, want nil (optional ref skipped)", err)
+		t.Fatalf("resolveExtraData() error = %v, want nil (optional key skipped)", err)
 	}
-	if len(got) != 0 {
-		t.Errorf("got %v, want empty map", got)
+	if len(got) != 1 || string(got["ca.crt"]) != "PEM" {
+		t.Errorf("got %v, want present key ca.crt=PEM projected despite the absent sibling", got)
+	}
+	if len(missing) != 1 || missing[0] != "configMap ns/ca-bundle: missing.key" {
+		t.Errorf("missing = %v, want just the absent key reported", missing)
 	}
 }
 
 func TestResolveExtraData_ReservedKeyDropped_EmitsWarningEvent(t *testing.T) {
-	owner := newTestOwner(false, githubv1.SecretDataSource{
-		ConfigMap: &githubv1.SecretDataSourceRef{Name: "malicious", Namespace: "ns"},
+	owner := newTestOwner(false, githubv1.LocalSecretDataSource{
+		ConfigMap: &githubv1.LocalSecretDataSourceRef{Name: "malicious"},
 	})
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: "malicious", Namespace: "ns"},
@@ -183,7 +193,7 @@ func TestResolveExtraData_ReservedKeyDropped_EmitsWarningEvent(t *testing.T) {
 	rec := record.NewFakeRecorder(10)
 	s := &tokenSecret{owner: owner, reader: newFakeReader(cm).Build(), recorder: rec}
 
-	got, err := s.resolveExtraData(context.Background())
+	got, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -198,13 +208,13 @@ func TestResolveExtraData_ReservedKeyDropped_EmitsWarningEvent(t *testing.T) {
 
 func TestResolveExtraData_DuplicateKey_LastWins_EmitsWarningEvent(t *testing.T) {
 	owner := newTestOwner(false,
-		githubv1.SecretDataSource{Inline: map[string]string{"ca.crt": "first"}},
-		githubv1.SecretDataSource{Inline: map[string]string{"ca.crt": "second"}},
+		githubv1.LocalSecretDataSource{Inline: map[string]string{"ca.crt": "first"}},
+		githubv1.LocalSecretDataSource{Inline: map[string]string{"ca.crt": "second"}},
 	)
 	rec := record.NewFakeRecorder(10)
 	s := &tokenSecret{owner: owner, recorder: rec}
 
-	got, err := s.resolveExtraData(context.Background())
+	got, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -215,13 +225,13 @@ func TestResolveExtraData_DuplicateKey_LastWins_EmitsWarningEvent(t *testing.T) 
 }
 
 func TestResolveExtraData_BasicAuthReservedKeysDropped(t *testing.T) {
-	owner := newTestOwner(true, githubv1.SecretDataSource{
+	owner := newTestOwner(true, githubv1.LocalSecretDataSource{
 		Inline: map[string]string{"username": "spoofed", "password": "spoofed", "ca.crt": "PEM"},
 	})
 	rec := record.NewFakeRecorder(10)
 	s := &tokenSecret{owner: owner, recorder: rec}
 
-	got, err := s.resolveExtraData(context.Background())
+	got, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -233,6 +243,34 @@ func TestResolveExtraData_BasicAuthReservedKeysDropped(t *testing.T) {
 	}
 	if string(got["ca.crt"]) != "PEM" {
 		t.Errorf("got %v, want ca.crt=PEM to survive", got)
+	}
+}
+
+func TestLastKnownGoodExtraData(t *testing.T) {
+	data := map[string][]byte{
+		"token":    []byte("ghs_live"),
+		"username": []byte("x-access-token"),
+		"password": []byte("ghs_live"),
+		"ca.crt":   []byte("PEM"),
+	}
+
+	got := lastKnownGoodExtraData(data, false)
+	if _, exists := got["token"]; exists {
+		t.Errorf("got %v, want credential key 'token' excluded", got)
+	}
+	if string(got["ca.crt"]) != "PEM" || string(got["username"]) != "x-access-token" {
+		t.Errorf("got %v, want non-reserved keys retained", got)
+	}
+
+	got = lastKnownGoodExtraData(data, true)
+	if _, exists := got["username"]; exists {
+		t.Errorf("got %v, want credential key 'username' excluded under basicAuth", got)
+	}
+	if _, exists := got["password"]; exists {
+		t.Errorf("got %v, want credential key 'password' excluded under basicAuth", got)
+	}
+	if string(got["token"]) != "ghs_live" {
+		t.Errorf("got %v, want 'token' retained under basicAuth (not reserved there)", got)
 	}
 }
 

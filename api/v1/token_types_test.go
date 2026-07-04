@@ -349,10 +349,10 @@ func TestToken_GetSecretDataSources(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Namespace: "team-a"},
 		Spec: v1.TokenSpec{
 			Secret: v1.TokenSecretSpec{
-				ExtraData: []v1.SecretDataSource{
+				ExtraData: []v1.LocalSecretDataSource{
 					{Inline: map[string]string{"ca.crt": "PEM"}},
-					{ConfigMap: &v1.SecretDataSourceRef{Name: "ca-bundle"}},
-					{Secret: &v1.SecretDataSourceRef{Name: "ca-key"}},
+					{ConfigMap: &v1.LocalSecretDataSourceRef{Name: "ca-bundle", Keys: []string{"ca.crt"}, Optional: true}},
+					{Secret: &v1.LocalSecretDataSourceRef{Name: "ca-key"}},
 				},
 			},
 		},
@@ -366,10 +366,13 @@ func TestToken_GetSecretDataSources(t *testing.T) {
 		t.Errorf("inline entry = %v, want ca.crt=PEM", got[0].Inline)
 	}
 	if got[1].ConfigMap.Namespace != "team-a" {
-		t.Errorf("configMap ref namespace = %q, want forced to Token's own namespace %q", got[1].ConfigMap.Namespace, "team-a")
+		t.Errorf("configMap ref namespace = %q, want the Token's own namespace %q", got[1].ConfigMap.Namespace, "team-a")
+	}
+	if len(got[1].ConfigMap.Keys) != 1 || got[1].ConfigMap.Keys[0] != "ca.crt" || !got[1].ConfigMap.Optional {
+		t.Errorf("configMap ref = %+v, want Keys and Optional carried over", got[1].ConfigMap)
 	}
 	if got[2].Secret.Namespace != "team-a" {
-		t.Errorf("secret ref namespace = %q, want forced to Token's own namespace %q", got[2].Secret.Namespace, "team-a")
+		t.Errorf("secret ref namespace = %q, want the Token's own namespace %q", got[2].Secret.Namespace, "team-a")
 	}
 
 	if got := (&v1.Token{}).GetSecretDataSources(); got != nil {

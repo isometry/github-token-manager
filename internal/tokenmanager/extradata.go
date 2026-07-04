@@ -6,46 +6,33 @@ import (
 	"maps"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
 )
 
-// requiredSourceError wraps a failure to resolve a required (non-optional)
-// extraData source: an unreadable ConfigMap/Secret, or an allowlisted key
-// absent from it. Reconcile treats it as fatal to the managed Secret.
-type requiredSourceError struct {
-	desc string
-	err  error
-}
-
-func (e *requiredSourceError) Error() string {
-	return fmt.Sprintf("required extraData source %s: %v", e.desc, e.err)
-}
-
-func (e *requiredSourceError) Unwrap() error {
-	return e.err
-}
-
 // resolveExtraData projects spec.secret.extraData into a flat key/value map,
 // in list order: inline entries copy verbatim; configMap/secret entries are
-// read live (uncached) and filtered by their optional key allowlist. A
-// non-optional ref that is unreadable, or names an absent key, fails the
-// whole resolution. Keys reserved for the operator-managed credential (per
-// GetSecretBasicAuth) are dropped with a Warning event; duplicate
-// destination keys across sources let the later source win, also with a
-// Warning event.
-func (s *tokenSecret) resolveExtraData(ctx context.Context) (map[string][]byte, error) {
+// read live (uncached) and filtered by their optional key allowlist.
+// Optional refs tolerate absence: a missing object or listed key is skipped
+// and reported in missing. A non-optional ref that is unreadable, or names
+// an absent key, fails the whole resolution; the caller decides whether to
+// retain the managed Secret's last-known-good data or block its creation.
+// Keys reserved for the operator-managed credential (per GetSecretBasicAuth)
+// are dropped with a Warning event; duplicate destination keys across
+// sources let the later source win, also with a Warning event.
+func (s *tokenSecret) resolveExtraData(ctx context.Context) (data map[string][]byte, missing []string, err error) {
 	reserved := reservedKeys(s.owner.GetSecretBasicAuth())
-	data := make(map[string][]byte)
-	reads := make(map[readKey]map[string][]byte)
+	data = make(map[string][]byte)
 
 	for _, source := range s.owner.GetSecretDataSources() {
-		projected, err := s.resolveSource(ctx, source, reads)
+		projected, absent, err := s.resolveSource(ctx, source)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+		missing = append(missing, absent...)
 
 		for k, v := range projected {
 			if reserved.Has(k) {
@@ -59,20 +46,12 @@ func (s *tokenSecret) resolveExtraData(ctx context.Context) (map[string][]byte, 
 		}
 	}
 
-	return data, nil
+	return data, missing, nil
 }
 
-// readKey identifies a source object within one resolveExtraData pass, so
-// multiple entries referencing the same object share a single live read.
-type readKey struct {
-	kind      string
-	namespace string
-	name      string
-}
-
-// resolveSource resolves a single extraData entry to its projected keys.
-// Successful ConfigMap/Secret reads are memoized in reads.
-func (s *tokenSecret) resolveSource(ctx context.Context, source githubv1.SecretDataSource, reads map[readKey]map[string][]byte) (map[string][]byte, error) {
+// resolveSource resolves a single extraData entry to its projected keys,
+// also reporting any keys an optional ref tolerated as absent.
+func (s *tokenSecret) resolveSource(ctx context.Context, source githubv1.SecretDataSource) (map[string][]byte, []string, error) {
 	var kind string
 	var ref *githubv1.SecretDataSourceRef
 	var read func(context.Context, *githubv1.SecretDataSourceRef) (map[string][]byte, error)
@@ -83,7 +62,7 @@ func (s *tokenSecret) resolveSource(ctx context.Context, source githubv1.SecretD
 		for k, v := range source.Inline {
 			projected[k] = []byte(v)
 		}
-		return projected, nil
+		return projected, nil, nil
 
 	case source.ConfigMap != nil:
 		kind, ref, read = "configMap", source.ConfigMap, s.readConfigMap
@@ -93,49 +72,42 @@ func (s *tokenSecret) resolveSource(ctx context.Context, source githubv1.SecretD
 
 	default:
 		// Unreachable: CEL admission requires exactly one of inline/configMap/secret.
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	key := readKey{kind: kind, namespace: ref.Namespace, name: ref.Name}
-	all, cached := reads[key]
-	var err error
-	if !cached {
-		if all, err = read(ctx, ref); err == nil {
-			reads[key] = all
+	desc := fmt.Sprintf("%s %s/%s", kind, ref.Namespace, ref.Name)
+	all, err := read(ctx, ref)
+	if err != nil {
+		if ref.Optional && apierrors.IsNotFound(err) {
+			return nil, []string{desc}, nil
 		}
+		return nil, nil, fmt.Errorf("required extraData source %s: %w", desc, err)
 	}
-	return s.applyAllowlist(fmt.Sprintf("%s %s/%s", kind, ref.Namespace, ref.Name), ref, all, err)
+	return applyAllowlist(desc, ref, all)
 }
 
-// applyAllowlist narrows `all` (nil if the source object itself could not be
-// read; readErr carries the reason) down to ref.Keys, or returns all keys
-// when the allowlist is empty. A failure to read the source, or an
-// allowlisted key absent from it, is fatal unless ref.Optional, in which
-// case the source is skipped by projecting nothing.
-func (s *tokenSecret) applyAllowlist(desc string, ref *githubv1.SecretDataSourceRef, all map[string][]byte, readErr error) (map[string][]byte, error) {
-	if readErr != nil {
-		if ref.Optional {
-			return nil, nil
-		}
-		return nil, &requiredSourceError{desc: desc, err: readErr}
-	}
-
+// applyAllowlist narrows all down to ref.Keys, or returns all keys when the
+// allowlist is empty. A listed key absent from the source is fatal unless
+// ref.Optional, in which case just that key is skipped and reported in
+// missing.
+func applyAllowlist(desc string, ref *githubv1.SecretDataSourceRef, all map[string][]byte) (selected map[string][]byte, missing []string, err error) {
 	if len(ref.Keys) == 0 {
-		return all, nil
+		return all, nil, nil
 	}
 
-	selected := make(map[string][]byte, len(ref.Keys))
+	selected = make(map[string][]byte, len(ref.Keys))
 	for _, k := range ref.Keys {
 		v, ok := all[k]
 		if !ok {
-			if ref.Optional {
-				return nil, nil
+			if !ref.Optional {
+				return nil, nil, fmt.Errorf("required extraData source %s: key %q not found", desc, k)
 			}
-			return nil, &requiredSourceError{desc: desc, err: fmt.Errorf("key %q not found", k)}
+			missing = append(missing, fmt.Sprintf("%s: %s", desc, k))
+			continue
 		}
 		selected[k] = v
 	}
-	return selected, nil
+	return selected, missing, nil
 }
 
 func (s *tokenSecret) readConfigMap(ctx context.Context, ref *githubv1.SecretDataSourceRef) (map[string][]byte, error) {
@@ -161,6 +133,22 @@ func (s *tokenSecret) readSecret(ctx context.Context, ref *githubv1.SecretDataSo
 	all := make(map[string][]byte, len(secret.Data))
 	maps.Copy(all, secret.Data)
 	return all, nil
+}
+
+// lastKnownGoodExtraData recovers the extraData most recently projected into
+// the managed Secret: everything in its Data except the operator-managed
+// credential keys. Used to retain the projection while a required source is
+// unresolvable, so a valid credential is never sacrificed to an auxiliary
+// failure.
+func lastKnownGoodExtraData(data map[string][]byte, basicAuth bool) map[string][]byte {
+	reserved := reservedKeys(basicAuth)
+	retained := make(map[string][]byte, len(data))
+	for k, v := range data {
+		if !reserved.Has(k) {
+			retained[k] = v
+		}
+	}
+	return retained
 }
 
 // reservedKeys returns the set of Secret data keys the operator manages

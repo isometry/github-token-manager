@@ -187,14 +187,22 @@ func (t *ClusterToken) GetSecretBasicAuth() bool {
 
 // GetSecretDataSources returns the extraData sources for this ClusterToken,
 // defaulting any configMap/secret ref's empty namespace to the target
-// Secret's namespace.
+// Secret's namespace. Sources are deep-copied so the defaulting never
+// mutates the caller's spec.
 func (t *ClusterToken) GetSecretDataSources() []SecretDataSource {
-	return normalizeDataSources(t.Spec.Secret.ExtraData, func(existing string) string {
-		if existing == "" {
-			return t.Spec.Secret.Namespace
+	if len(t.Spec.Secret.ExtraData) == 0 {
+		return nil
+	}
+	sources := make([]SecretDataSource, len(t.Spec.Secret.ExtraData))
+	for i, source := range t.Spec.Secret.ExtraData {
+		sources[i] = *source.DeepCopy()
+		for _, ref := range []*SecretDataSourceRef{sources[i].ConfigMap, sources[i].Secret} {
+			if ref != nil && ref.Namespace == "" {
+				ref.Namespace = t.Spec.Secret.Namespace
+			}
 		}
-		return existing
-	})
+	}
+	return sources
 }
 
 func (t *ClusterToken) GetInstallationTokenOptions() *github.InstallationTokenOptions {
@@ -236,6 +244,10 @@ func (t *ClusterToken) GetStatusConditions() []metav1.Condition {
 
 func (t *ClusterToken) SetStatusCondition(condition metav1.Condition) (changed bool) {
 	return meta.SetStatusCondition(&t.Status.Conditions, condition)
+}
+
+func (t *ClusterToken) RemoveStatusCondition(conditionType string) (changed bool) {
+	return meta.RemoveStatusCondition(&t.Status.Conditions, conditionType)
 }
 
 // +kubebuilder:object:root=true

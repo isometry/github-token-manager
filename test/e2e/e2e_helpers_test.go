@@ -87,9 +87,9 @@ func (c *clientContext) waitForTokenReconciliation(name, namespace string) {
 				Namespace: namespace,
 			}, tokenObj),
 		).NotTo(HaveOccurred())
-		g.Expect(tokenObj.Status.Conditions).To(HaveLen(1))
-		g.Expect(tokenObj.Status.Conditions[0].Type).To(Equal(gtmv1.ConditionTypeReady))
-		g.Expect(tokenObj.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+		ready := meta.FindStatusCondition(tokenObj.Status.Conditions, gtmv1.ConditionTypeReady)
+		g.Expect(ready).NotTo(BeNil())
+		g.Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 	}).Within(reconciliationTimeout).Should(Succeed())
 }
 
@@ -102,9 +102,9 @@ func (c *clientContext) waitForClusterTokenReconciliation(name string) {
 				Name: name,
 			}, clusterTokenObj),
 		).NotTo(HaveOccurred())
-		g.Expect(clusterTokenObj.Status.Conditions).To(HaveLen(1))
-		g.Expect(clusterTokenObj.Status.Conditions[0].Type).To(Equal(gtmv1.ConditionTypeReady))
-		g.Expect(clusterTokenObj.Status.Conditions[0].Status).To(Equal(metav1.ConditionTrue))
+		ready := meta.FindStatusCondition(clusterTokenObj.Status.Conditions, gtmv1.ConditionTypeReady)
+		g.Expect(ready).NotTo(BeNil())
+		g.Expect(ready.Status).To(Equal(metav1.ConditionTrue))
 	}).Within(reconciliationTimeout).Should(Succeed())
 }
 
@@ -124,11 +124,13 @@ func (c *clientContext) waitForAppReconciliation(name, namespace string) {
 	}).Within(reconciliationTimeout).Should(Succeed())
 }
 
-// waitForTokenCondition waits for a Token's Ready condition to reach the given
-// status and reason. Unlike waitForTokenReconciliation (which hard-asserts
-// Ready=True), this also covers not-ready terminal states such as a
-// fail-closed extraData source.
-func (c *clientContext) waitForTokenCondition(name, namespace string, status metav1.ConditionStatus, reason string) {
+// waitForTokenCondition waits for a Token condition of the given type to
+// reach the given status and reason. Unlike waitForTokenReconciliation
+// (which hard-asserts Ready=True), this also covers not-ready and degraded
+// states such as an unresolvable extraData source. The window allows for a
+// full refresh cycle, since extraData sources are only re-read on the
+// refresh/retry cadence.
+func (c *clientContext) waitForTokenCondition(name, namespace, conditionType string, status metav1.ConditionStatus, reason string) {
 	Eventually(func(g Gomega) {
 		tokenObj := &gtmv1.Token{}
 		g.Expect(
@@ -137,11 +139,11 @@ func (c *clientContext) waitForTokenCondition(name, namespace string, status met
 				Namespace: namespace,
 			}, tokenObj),
 		).NotTo(HaveOccurred())
-		ready := meta.FindStatusCondition(tokenObj.Status.Conditions, gtmv1.ConditionTypeReady)
-		g.Expect(ready).NotTo(BeNil())
-		g.Expect(ready.Status).To(Equal(status))
-		g.Expect(ready.Reason).To(Equal(reason))
-	}).Within(reconciliationTimeout).Should(Succeed())
+		condition := meta.FindStatusCondition(tokenObj.Status.Conditions, conditionType)
+		g.Expect(condition).NotTo(BeNil())
+		g.Expect(condition.Status).To(Equal(status))
+		g.Expect(condition.Reason).To(Equal(reason))
+	}).Within(reconciliationTimeout + tokenRefreshInterval).Should(Succeed())
 }
 
 // checkManagedSecret waits for a secret to be created and returns its initial token value
@@ -268,7 +270,7 @@ func (c *clientContext) createToken(
 	name, namespace, secretName, appRefName string,
 	isBasicAuth bool,
 	refreshInterval time.Duration,
-	extraData ...gtmv1.SecretDataSource,
+	extraData ...gtmv1.LocalSecretDataSource,
 ) error {
 	spec := gtmv1.TokenSpec{
 		RefreshInterval: metav1.Duration{Duration: refreshInterval},

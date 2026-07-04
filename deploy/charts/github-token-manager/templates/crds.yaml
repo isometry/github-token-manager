@@ -318,10 +318,11 @@ spec:
                       items:
                         description: |-
                           SecretDataSource projects additional keys into a managed Secret from
-                          exactly one of an inline map, a ConfigMap, or another Secret. Entries are
-                          merged in list order; later entries win on key collision, and keys
-                          reserved by the token type (e.g. 'token', or 'username'/'password' under
-                          basicAuth) are always overridden by the operator-managed values.
+                          exactly one of an inline map, a ConfigMap, or another Secret. Used by the
+                          cluster-scoped ClusterToken kind. Entries are merged in list order; later
+                          entries win on key collision, and keys reserved by the token type (e.g.
+                          'token', or 'username'/'password' under basicAuth) are always overridden
+                          by the operator-managed values.
                         properties:
                           configMap:
                             description: Project keys from a ConfigMap.
@@ -331,7 +332,9 @@ spec:
                                   Restrict projection to these keys. When empty, every key in the
                                   referenced object is projected.
                                 items:
+                                  maxLength: 253
                                   type: string
+                                maxItems: 64
                                 type: array
                               name:
                                 description: Name of the referenced ConfigMap or Secret.
@@ -339,17 +342,19 @@ spec:
                                 type: string
                               namespace:
                                 description: |-
-                                  Namespace of the referenced ConfigMap or Secret. ClusterToken defaults
-                                  this to the target Secret's namespace when empty. Token may not set
-                                  this field: Tokens may only reference sources in their own namespace.
+                                  Namespace of the referenced ConfigMap or Secret. If empty, defaults to
+                                  the target Secret's namespace.
                                 maxLength: 253
                                 type: string
                               optional:
                                 description: |-
-                                  When false (the default), a missing or unreadable object, or a listed
-                                  key absent from it, fails the reconcile: the managed Secret is deleted
-                                  (or never created) and the (Cluster)Token is marked not-ready. When
-                                  true, the reference is skipped instead.
+                                  When false (the default), an unresolvable reference — a missing or
+                                  unreadable object, or a listed key absent from it — blocks creation of
+                                  the managed Secret; once the Secret exists, its last-known-good
+                                  extraData is retained (while the credential keeps refreshing) and the
+                                  failure is surfaced via the ExtraDataDegraded condition. When true, a
+                                  missing object or key is skipped instead and reported via the same
+                                  condition.
                                 type: boolean
                             required:
                               - name
@@ -368,7 +373,9 @@ spec:
                                   Restrict projection to these keys. When empty, every key in the
                                   referenced object is projected.
                                 items:
+                                  maxLength: 253
                                   type: string
+                                maxItems: 64
                                 type: array
                               name:
                                 description: Name of the referenced ConfigMap or Secret.
@@ -376,17 +383,19 @@ spec:
                                 type: string
                               namespace:
                                 description: |-
-                                  Namespace of the referenced ConfigMap or Secret. ClusterToken defaults
-                                  this to the target Secret's namespace when empty. Token may not set
-                                  this field: Tokens may only reference sources in their own namespace.
+                                  Namespace of the referenced ConfigMap or Secret. If empty, defaults to
+                                  the target Secret's namespace.
                                 maxLength: 253
                                 type: string
                               optional:
                                 description: |-
-                                  When false (the default), a missing or unreadable object, or a listed
-                                  key absent from it, fails the reconcile: the managed Secret is deleted
-                                  (or never created) and the (Cluster)Token is marked not-ready. When
-                                  true, the reference is skipped instead.
+                                  When false (the default), an unresolvable reference — a missing or
+                                  unreadable object, or a listed key absent from it — blocks creation of
+                                  the managed Secret; once the Secret exists, its last-known-good
+                                  extraData is retained (while the credential keeps refreshing) and the
+                                  failure is surfaced via the ExtraDataDegraded condition. When true, a
+                                  missing object or key is skipped instead and reported via the same
+                                  condition.
                                 type: boolean
                             required:
                               - name
@@ -842,39 +851,37 @@ spec:
                         otherwise) are always overridden by the operator-managed values.
                       items:
                         description: |-
-                          SecretDataSource projects additional keys into a managed Secret from
-                          exactly one of an inline map, a ConfigMap, or another Secret. Entries are
-                          merged in list order; later entries win on key collision, and keys
-                          reserved by the token type (e.g. 'token', or 'username'/'password' under
-                          basicAuth) are always overridden by the operator-managed values.
+                          LocalSecretDataSource is the same-namespace form of SecretDataSource used
+                          by the namespaced Token kind. A Token may only reference ConfigMaps and
+                          Secrets in its own namespace.
                         properties:
                           configMap:
-                            description: Project keys from a ConfigMap.
+                            description:
+                              Project keys from a ConfigMap in the same namespace
+                              as the Token.
                             properties:
                               keys:
                                 description: |-
                                   Restrict projection to these keys. When empty, every key in the
                                   referenced object is projected.
                                 items:
+                                  maxLength: 253
                                   type: string
+                                maxItems: 64
                                 type: array
                               name:
                                 description: Name of the referenced ConfigMap or Secret.
                                 maxLength: 253
                                 type: string
-                              namespace:
-                                description: |-
-                                  Namespace of the referenced ConfigMap or Secret. ClusterToken defaults
-                                  this to the target Secret's namespace when empty. Token may not set
-                                  this field: Tokens may only reference sources in their own namespace.
-                                maxLength: 253
-                                type: string
                               optional:
                                 description: |-
-                                  When false (the default), a missing or unreadable object, or a listed
-                                  key absent from it, fails the reconcile: the managed Secret is deleted
-                                  (or never created) and the (Cluster)Token is marked not-ready. When
-                                  true, the reference is skipped instead.
+                                  When false (the default), an unresolvable reference — a missing or
+                                  unreadable object, or a listed key absent from it — blocks creation of
+                                  the managed Secret; once the Secret exists, its last-known-good
+                                  extraData is retained (while the credential keeps refreshing) and the
+                                  failure is surfaced via the ExtraDataDegraded condition. When true, a
+                                  missing object or key is skipped instead and reported via the same
+                                  condition.
                                 type: boolean
                             required:
                               - name
@@ -886,32 +893,32 @@ spec:
                             maxProperties: 16
                             type: object
                           secret:
-                            description: Project keys from a Secret.
+                            description:
+                              Project keys from a Secret in the same namespace
+                              as the Token.
                             properties:
                               keys:
                                 description: |-
                                   Restrict projection to these keys. When empty, every key in the
                                   referenced object is projected.
                                 items:
+                                  maxLength: 253
                                   type: string
+                                maxItems: 64
                                 type: array
                               name:
                                 description: Name of the referenced ConfigMap or Secret.
                                 maxLength: 253
                                 type: string
-                              namespace:
-                                description: |-
-                                  Namespace of the referenced ConfigMap or Secret. ClusterToken defaults
-                                  this to the target Secret's namespace when empty. Token may not set
-                                  this field: Tokens may only reference sources in their own namespace.
-                                maxLength: 253
-                                type: string
                               optional:
                                 description: |-
-                                  When false (the default), a missing or unreadable object, or a listed
-                                  key absent from it, fails the reconcile: the managed Secret is deleted
-                                  (or never created) and the (Cluster)Token is marked not-ready. When
-                                  true, the reference is skipped instead.
+                                  When false (the default), an unresolvable reference — a missing or
+                                  unreadable object, or a listed key absent from it — blocks creation of
+                                  the managed Secret; once the Secret exists, its last-known-good
+                                  extraData is retained (while the credential keeps refreshing) and the
+                                  failure is surfaced via the ExtraDataDegraded condition. When true, a
+                                  missing object or key is skipped instead and reported via the same
+                                  condition.
                                 type: boolean
                             required:
                               - name
@@ -958,12 +965,6 @@ spec:
                       rule:
                         "!has(self.extraData) || self.extraData.all(e, !has(e.inline)
                         || e.inline.all(k, k.matches('^[-._a-zA-Z0-9]+$')))"
-                    - message:
-                        extraData configMap/secret sources may not set namespace
-                        on a Token; Tokens may only reference sources in their own namespace
-                      rule:
-                        "!has(self.extraData) || self.extraData.all(e, (!has(e.configMap)
-                        || !has(e.configMap.namespace)) && (!has(e.secret) || !has(e.secret.namespace)))"
               type: object
             status:
               description: TokenStatus defines the observed state of Token

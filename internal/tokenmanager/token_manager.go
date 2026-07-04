@@ -32,4 +32,5 @@ type TokenManager interface {
 	SetStatusTimestamps(expiresAt time.Time)
 	GetStatusConditions() []metav1.Condition
 	SetStatusCondition(condition metav1.Condition) (changed bool)
+	RemoveStatusCondition(conditionType string) (changed bool)
 }
