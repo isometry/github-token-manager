@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/isometry/ghait/v84"
+	"github.com/isometry/ghait/v88"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

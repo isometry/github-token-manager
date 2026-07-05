@@ -17,5 +17,7 @@ func TestSetup(t *testing.T) {
 	if rec == nil {
 		t.Fatal("Setup returned nil recorder")
 	}
-	t.Cleanup(func() { _ = rec.Shutdown(context.Background()) })
+	// t.Context() is already cancelled when cleanups run; derive an
+	// uncancelled context for the final flush.
+	t.Cleanup(func() { _ = rec.Shutdown(context.WithoutCancel(t.Context())) })
 }

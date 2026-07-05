@@ -3,7 +3,7 @@ package tokenmanager
 import (
 	"time"
 
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v88/github"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -17,6 +17,7 @@ type TokenManager interface {
 	GetType() string
 	GetAppRef() *githubv1.AppReference
 	GetSecretBasicAuth() bool
+	GetSecretDataSources() []githubv1.SecretDataSource
 	GetInstallationID() int64
 	GetRefreshInterval() time.Duration
 	GetRetryInterval() time.Duration
@@ -31,4 +32,5 @@ type TokenManager interface {
 	SetStatusTimestamps(expiresAt time.Time)
 	GetStatusConditions() []metav1.Condition
 	SetStatusCondition(condition metav1.Condition) (changed bool)
+	RemoveStatusCondition(conditionType string) (changed bool)
 }

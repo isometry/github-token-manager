@@ -3,7 +3,7 @@ package v1_test
 import (
 	"testing"
 
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v88/github"
 	v1 "github.com/isometry/github-token-manager/api/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )

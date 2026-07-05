@@ -150,7 +150,22 @@ spec:
     labels: {}         # (optional) map of labels for managed `Secret`
     name: bar          # (optional) override name for managed `Secret` (default: .metadata.name)
     namespace: default # (required, ClusterToken-only) set the target namespace for managed `Secret`
+    extraData:         # (optional) list of additional keys to project into managed `Secret`
+      - inline: {}             # static key/value pairs, merged verbatim
+      - configMap:              # project keys from a ConfigMap
+          name: foo
+          namespace: bar        # (ClusterToken only: defaults to `secret.namespace`; a Token ref has no namespace field and always reads its own namespace)
+          keys: []              # (optional) allowlist of keys to project (default: all keys)
+          optional: false       # (optional) if true, a missing source or key is skipped (per-key) rather than blocking
+      - secret:                 # project keys from a Secret; same fields as configMap
+          name: baz
 ```
+
+`spec.secret.extraData` projects additional keys into the managed `Secret` alongside the generated credentials, from inline values and/or referenced ConfigMaps/Secrets. Entries are merged in order, with later entries overriding earlier ones on key collision (logged as a Warning event). Operator-managed keys are always authoritative: inline entries that set a reserved key (`username`/`password` when `basicAuth: true`, or `token` otherwise) are rejected at admission, while the same keys from a ConfigMap/Secret source are dropped at reconcile since their contents aren't known until read — surfaced as a Warning event and via `ExtraDataDegraded=True`/`ReservedKeysIgnored`, which persists until the collision is removed.
+
+Token validity always takes priority over extraData. A required source (`optional: false`) that cannot be resolved only blocks *creation* of the managed `Secret` (surfaced as `Ready=False`/`SourceUnavailable`); once the `Secret` exists, an unresolvable source never destroys it — the credential keeps refreshing, the last-known-good extraData is retained, and the degradation is surfaced via the abnormal-true `ExtraDataDegraded` condition (`True`/`SourceUnavailable`, plus a Warning event) while the source is retried on the retry interval. With `optional: true`, a missing object or a missing listed key is skipped per-key (present keys still project) and reported via `ExtraDataDegraded=True`/`KeysMissing`. When ignored reserved keys and missing optional keys co-occur, the single condition takes the `ReservedKeysIgnored` reason (it needs a spec change to fix) and its message reports both. When extraData resolves in full, the condition is absent.
+
+Sources are re-read on the refresh/retry interval; there is no separate watch on the referenced ConfigMap/Secret. Because last-known-good data is retained, deleting a source object does not remove its keys from the managed `Secret` — remove the entry from `spec.secret.extraData` instead.
 
 ### Multiple GitHub Apps (`App` CRD)
 

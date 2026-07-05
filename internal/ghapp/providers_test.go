@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/isometry/ghait/v84/provider"
+	"github.com/isometry/ghait/v88/provider"
 )
 
 // TestDefaultBuildRegistersAllProviders guards against the default (tagless)

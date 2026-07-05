@@ -3,21 +3,24 @@ package tokenmanager
 import (
 	"context"
 	"errors"
+	"fmt"
 	"maps"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v88/github"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	"github.com/isometry/ghait/v84"
+	"github.com/isometry/ghait/v88"
 	githubv1 "github.com/isometry/github-token-manager/api/v1"
 	"github.com/isometry/github-token-manager/internal/metrics"
 )
@@ -31,6 +34,8 @@ const (
 type tokenSecret struct {
 	log            logr.Logger
 	client         client.Client
+	reader         client.Reader
+	recorder       record.EventRecorder
 	key            types.NamespacedName
 	owner          TokenManager
 	controllerName string
@@ -44,6 +49,23 @@ type Option func(*tokenSecret)
 func WithClient(c client.Client) Option {
 	return func(s *tokenSecret) {
 		s.client = c
+	}
+}
+
+// WithAPIReader supplies an uncached reader used to resolve extraData
+// ConfigMap/Secret sources live on every reconcile, rather than starting a
+// cluster-wide watch/cache for objects the operator otherwise never touches.
+func WithAPIReader(r client.Reader) Option {
+	return func(s *tokenSecret) {
+		s.reader = r
+	}
+}
+
+// WithEventRecorder supplies the recorder used to surface non-fatal
+// extraData issues (reserved/shadowed keys) as Warning events on the owner.
+func WithEventRecorder(r record.EventRecorder) Option {
+	return func(s *tokenSecret) {
+		s.recorder = r
 	}
 }
 
@@ -122,10 +144,78 @@ func (s *tokenSecret) Reconcile(ctx context.Context) (result reconcile.Result, e
 		log.Error(err, "failed to get secret")
 		return result, err
 	}
+	secretNotFound := apierrors.IsNotFound(err)
 
-	if apierrors.IsNotFound(err) {
+	extraData, missing, ignored, resolveErr := s.resolveExtraData(ctx)
+	// degraded is the abnormal-true ExtraDataDegraded condition to surface;
+	// nil means extraData resolved cleanly (or none is configured) and any
+	// stale condition is removed on the next status write.
+	var degraded *metav1.Condition
+	switch {
+	case resolveErr != nil:
+		degraded = &metav1.Condition{
+			Type:    githubv1.ConditionTypeExtraDataDegraded,
+			Status:  metav1.ConditionTrue,
+			Reason:  githubv1.ReasonSourceUnavailable,
+			Message: resolveErr.Error(),
+		}
+		s.metrics.RecordReconcileError(ctx, s.controllerName, metrics.ReasonExtraData)
+
+		if secretNotFound {
+			// Fail closed on creation only: there is no last-known-good
+			// projection yet, and a partial Secret would mislead consumers.
+			log.Info("extraData source unavailable, deferring secret creation", "reason", resolveErr.Error())
+			ready := metav1.Condition{
+				Type:    githubv1.ConditionTypeReady,
+				Status:  metav1.ConditionFalse,
+				Reason:  githubv1.ReasonSourceUnavailable,
+				Message: resolveErr.Error(),
+			}
+			if statusErr := s.UpdateTokenStatus(ctx, func() bool {
+				changed := s.owner.SetStatusCondition(ready)
+				if s.applyExtraDataDegraded(degraded) {
+					changed = true
+				}
+				return changed
+			}); statusErr != nil {
+				log.Error(statusErr, "failed to update token status")
+				return result, statusErr
+			}
+			return reconcile.Result{RequeueAfter: s.owner.GetRetryInterval()}, nil
+		}
+
+		// The Secret already exists: token validity outranks auxiliary data,
+		// so keep the credential fresh and retain the last-known-good
+		// extraData until the source resolves again.
+		log.Info("extraData source unavailable, retaining last-known-good extraData", "reason", resolveErr.Error())
+		s.recordWarning("ExtraDataSourceUnavailable", "retaining last-known-good extraData: %v", resolveErr)
+		extraData = lastKnownGoodExtraData(secret.Data, s.owner.GetSecretBasicAuth())
+
+	case len(ignored) > 0 || len(missing) > 0:
+		// A single condition carries both partial degradations: the reason
+		// prefers ReservedKeysIgnored (a spec misconfiguration needing user
+		// action) over KeysMissing (possibly transient), while the message
+		// reports every issue.
+		reason := githubv1.ReasonKeysMissing
+		var parts []string
+		if len(ignored) > 0 {
+			reason = githubv1.ReasonReservedKeysIgnored
+			parts = append(parts, fmt.Sprintf("extraData keys reserved by the managed credential were ignored: %q", ignored))
+		}
+		if len(missing) > 0 {
+			parts = append(parts, fmt.Sprintf("optional extraData keys missing: %s", strings.Join(missing, ", ")))
+		}
+		degraded = &metav1.Condition{
+			Type:    githubv1.ConditionTypeExtraDataDegraded,
+			Status:  metav1.ConditionTrue,
+			Reason:  reason,
+			Message: strings.Join(parts, "; "),
+		}
+	}
+
+	if secretNotFound {
 		start := time.Now()
-		if err := s.CreateSecret(ctx); err != nil {
+		if err := s.CreateSecret(ctx, extraData, degraded); err != nil {
 			s.metrics.RecordTokenRefresh(ctx, s.controllerName, metrics.ResultError)
 			s.metrics.RecordTokenRefreshDuration(ctx, s.controllerName, metrics.OperationCreate, time.Since(start))
 			if errors.Is(err, ghait.TransientError{}) {
@@ -155,7 +245,9 @@ func (s *tokenSecret) Reconcile(ctx context.Context) (result reconcile.Result, e
 			Reason:  "Failed",
 			Message: "Secret already exists",
 		}
-		if err := s.UpdateTokenStatus(ctx, &condition, nil, false); err != nil {
+		if err := s.UpdateTokenStatus(ctx, func() bool {
+			return s.owner.SetStatusCondition(condition)
+		}); err != nil {
 			log.Error(err, "failed to update token status")
 			return result, err
 		}
@@ -168,7 +260,7 @@ func (s *tokenSecret) Reconcile(ctx context.Context) (result reconcile.Result, e
 	s.Secret = secret
 
 	start := time.Now()
-	if err := s.UpdateSecret(ctx); err != nil {
+	if err := s.UpdateSecret(ctx, extraData, degraded); err != nil {
 		s.metrics.RecordTokenRefresh(ctx, s.controllerName, metrics.ResultError)
 		s.metrics.RecordTokenRefreshDuration(ctx, s.controllerName, metrics.OperationUpdate, time.Since(start))
 		if errors.Is(err, ghait.TransientError{}) {
@@ -188,10 +280,15 @@ func (s *tokenSecret) Reconcile(ctx context.Context) (result reconcile.Result, e
 	s.metrics.EnsureTokenActive(ctx, s.controllerName, s.key.String())
 	s.recordExpiry(ctx)
 
+	if resolveErr != nil {
+		// Serving last-known-good extraData: re-resolve the failed source
+		// promptly rather than waiting out a full refresh cycle.
+		return reconcile.Result{RequeueAfter: s.owner.GetRetryInterval()}, nil
+	}
 	return reconcile.Result{RequeueAfter: s.owner.GetRefreshInterval()}, nil
 }
 
-func (s *tokenSecret) CreateSecret(ctx context.Context) error {
+func (s *tokenSecret) CreateSecret(ctx context.Context, extraData map[string][]byte, degraded *metav1.Condition) error {
 	log := s.log.WithValues("func", "CreateSecret")
 	log.Info("creating secret")
 
@@ -214,7 +311,7 @@ func (s *tokenSecret) CreateSecret(ctx context.Context) error {
 			Labels:      s.SecretLabels(),
 			Annotations: s.owner.GetSecretAnnotations(),
 		},
-		Data: s.SecretData(installationToken.GetToken()),
+		Data: s.SecretData(installationToken.GetToken(), extraData),
 		Type: secretType,
 	}
 
@@ -239,7 +336,7 @@ func (s *tokenSecret) CreateSecret(ctx context.Context) error {
 		Message: "Created Secret",
 	}
 	expiresAt := installationToken.ExpiresAt.Time
-	if err := s.UpdateTokenStatus(ctx, &condition, &expiresAt, true); err != nil {
+	if err := s.UpdateTokenStatus(ctx, s.refreshStatusMutation(condition, degraded, expiresAt)); err != nil {
 		log.Error(err, "failed to update token status")
 		return err
 	}
@@ -247,7 +344,7 @@ func (s *tokenSecret) CreateSecret(ctx context.Context) error {
 	return nil
 }
 
-func (s *tokenSecret) UpdateSecret(ctx context.Context) error {
+func (s *tokenSecret) UpdateSecret(ctx context.Context, extraData map[string][]byte, degraded *metav1.Condition) error {
 	log := s.log.WithValues("func", "UpdateSecret")
 	log.Info("updating secret")
 
@@ -258,7 +355,7 @@ func (s *tokenSecret) UpdateSecret(ctx context.Context) error {
 		return err
 	}
 
-	s.Data = s.SecretData(installationToken.GetToken())
+	s.Data = s.SecretData(installationToken.GetToken(), extraData)
 
 	if err := s.client.Update(ctx, s.Secret); err != nil {
 		log.Error(err, "failed to update secret")
@@ -273,7 +370,7 @@ func (s *tokenSecret) UpdateSecret(ctx context.Context) error {
 		Message: "Updated Secret",
 	}
 	expiresAt := installationToken.ExpiresAt.Time
-	if err := s.UpdateTokenStatus(ctx, &condition, &expiresAt, true); err != nil {
+	if err := s.UpdateTokenStatus(ctx, s.refreshStatusMutation(condition, degraded, expiresAt)); err != nil {
 		log.Error(err, "failed to update token status")
 		return err
 	}
@@ -315,7 +412,9 @@ func (s *tokenSecret) DeleteSecret(ctx context.Context, key types.NamespacedName
 		Reason:  "Reconciling",
 		Message: "Deleted old Secret",
 	}
-	if err := s.UpdateTokenStatus(ctx, &condition, nil, false); err != nil {
+	if err := s.UpdateTokenStatus(ctx, func() bool {
+		return s.owner.SetStatusCondition(condition)
+	}); err != nil {
 		log.Error(err, "failed to update token status")
 		return err
 	}
@@ -323,31 +422,16 @@ func (s *tokenSecret) DeleteSecret(ctx context.Context, key types.NamespacedName
 	return nil
 }
 
-// UpdateTokenStatus refreshes the owner, applies the given mutations, and
-// writes status if anything changed, retrying on conflict. Pass nil for
-// condition or expiresAt to leave them untouched; updateManaged toggles the
-// ManagedSecret refresh.
-func (s *tokenSecret) UpdateTokenStatus(ctx context.Context, condition *metav1.Condition, expiresAt *time.Time, updateManaged bool) error {
+// UpdateTokenStatus refreshes the owner, applies mutate to its status, and
+// writes the result when mutate reports a change, retrying on conflict.
+func (s *tokenSecret) UpdateTokenStatus(ctx context.Context, mutate func() bool) error {
 	log := s.log.WithValues("func", "UpdateTokenStatus")
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		if err := s.RefreshOwner(ctx); err != nil {
 			return err
 		}
-
-		var changed bool
-		if condition != nil && s.owner.SetStatusCondition(*condition) {
-			changed = true
-		}
-		if expiresAt != nil {
-			s.owner.SetStatusTimestamps(*expiresAt)
-			changed = true
-		}
-		if updateManaged && s.owner.UpdateManagedSecret() {
-			changed = true
-		}
-
-		if !changed {
+		if !mutate() {
 			return nil
 		}
 		return s.client.Status().Update(ctx, s.owner)
@@ -357,6 +441,30 @@ func (s *tokenSecret) UpdateTokenStatus(ctx context.Context, condition *metav1.C
 		return err
 	}
 	return nil
+}
+
+// refreshStatusMutation is the status mutation shared by the create/update
+// success paths: Ready, the ExtraDataDegraded set-or-clear, fresh token
+// timestamps, and the ManagedSecret record. Always reports a change (the
+// timestamps move on every refresh).
+func (s *tokenSecret) refreshStatusMutation(ready metav1.Condition, degraded *metav1.Condition, expiresAt time.Time) func() bool {
+	return func() bool {
+		s.owner.SetStatusCondition(ready)
+		s.applyExtraDataDegraded(degraded)
+		s.owner.SetStatusTimestamps(expiresAt)
+		s.owner.UpdateManagedSecret()
+		return true
+	}
+}
+
+// applyExtraDataDegraded sets the abnormal-true ExtraDataDegraded condition,
+// or removes it when degraded is nil (extraData resolved cleanly, or none is
+// configured).
+func (s *tokenSecret) applyExtraDataDegraded(degraded *metav1.Condition) bool {
+	if degraded != nil {
+		return s.owner.SetStatusCondition(*degraded)
+	}
+	return s.owner.RemoveStatusCondition(githubv1.ConditionTypeExtraDataDegraded)
 }
 
 func (s *tokenSecret) SecretLabels() map[string]string {
@@ -370,14 +478,19 @@ func (s *tokenSecret) SecretLabels() map[string]string {
 	return secretLabels
 }
 
-func (s *tokenSecret) SecretData(installationToken string) map[string][]byte {
+// SecretData builds the final Secret payload from the resolved extraData
+// plus the operator-managed credential keys, which always win over any
+// extraData overlap.
+func (s *tokenSecret) SecretData(installationToken string, extraData map[string][]byte) map[string][]byte {
+	data := make(map[string][]byte, len(extraData)+2)
+	maps.Copy(data, extraData)
+
 	if s.owner.GetSecretBasicAuth() {
-		return map[string][]byte{
-			"username": []byte(BasicAuthUsername),
-			"password": []byte(installationToken),
-		}
+		data["username"] = []byte(BasicAuthUsername)
+		data["password"] = []byte(installationToken)
+	} else {
+		data["token"] = []byte(installationToken)
 	}
-	return map[string][]byte{
-		"token": []byte(installationToken),
-	}
+
+	return data
 }

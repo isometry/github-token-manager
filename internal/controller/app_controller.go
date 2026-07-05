@@ -179,27 +179,6 @@ func (r *AppReconciler) mapSecretToApps(ctx context.Context, obj client.Object) 
 	return out
 }
 
-// secretReferencedByApp reports whether at least one App in the Secret's
-// namespace references it via spec.keyRef.name. Used to gate the Secret
-// watch so unrelated cluster Secret churn doesn't drive mapper invocations.
-// On a transient cache error the event is allowed through; the mapper will
-// log and short-circuit if the index is still empty.
-func (r *AppReconciler) secretReferencedByApp(obj client.Object) bool {
-	secret, ok := obj.(*corev1.Secret)
-	if !ok {
-		return false
-	}
-	var apps githubv1.AppList
-	if err := r.List(context.Background(), &apps,
-		client.InNamespace(secret.Namespace),
-		client.MatchingFields{AppKeyRefIndex: secret.Name},
-		client.Limit(1),
-	); err != nil {
-		return true
-	}
-	return len(apps.Items) > 0
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
@@ -207,10 +186,7 @@ func (r *AppReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Named(ControllerNameApp).
 		Watches(&corev1.Secret{},
 			handler.EnqueueRequestsFromMapFunc(r.mapSecretToApps),
-			builder.WithPredicates(
-				predicate.ResourceVersionChangedPredicate{},
-				predicate.NewPredicateFuncs(r.secretReferencedByApp),
-			),
+			builder.WithPredicates(predicate.ResourceVersionChangedPredicate{}),
 		).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 3}).
 		Complete(r)

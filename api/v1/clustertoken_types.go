@@ -19,7 +19,7 @@ package v1
 import (
 	"time"
 
-	"github.com/google/go-github/v84/github"
+	"github.com/google/go-github/v88/github"
 	"github.com/isometry/github-token-manager/internal/ghapp"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -72,6 +72,9 @@ type ClusterTokenSpec struct {
 	RepositoryIDs []int64 `json:"repositoryIDs,omitempty"`
 }
 
+// +kubebuilder:validation:XValidation:rule="!has(self.extraData) || !(has(self.basicAuth) && self.basicAuth) || self.extraData.all(e, !has(e.inline) || !('username' in e.inline || 'password' in e.inline))",message="extraData inline must not contain 'username' or 'password' when basicAuth is true"
+// +kubebuilder:validation:XValidation:rule="!has(self.extraData) || (has(self.basicAuth) && self.basicAuth) || self.extraData.all(e, !has(e.inline) || !('token' in e.inline))",message="extraData inline must not contain 'token' when basicAuth is false"
+// +kubebuilder:validation:XValidation:rule="!has(self.extraData) || self.extraData.all(e, !has(e.inline) || e.inline.all(k, k.matches('^[-._a-zA-Z0-9]+$')))",message="extraData inline keys must consist of alphanumerics, '-', '_' or '.'"
 type ClusterTokenSecretSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MaxLength:=253
@@ -95,6 +98,15 @@ type ClusterTokenSecretSpec struct {
 	// +optional
 	// Create a secret with 'username' and 'password' fields for HTTP Basic Auth rather than simply 'token'
 	BasicAuth bool `json:"basicAuth,omitempty"`
+
+	// +optional
+	// +kubebuilder:validation:MaxItems:=16
+	// Additional keys to project into the managed Secret, from inline values
+	// and/or referenced ConfigMaps/Secrets. A configMap/secret ref's namespace
+	// defaults to the target Secret's namespace when unset. Reserved keys
+	// ('username'/'password' when basicAuth is true, 'token' otherwise) are
+	// always overridden by the operator-managed values.
+	ExtraData []SecretDataSource `json:"extraData,omitempty"`
 }
 
 // ClusterTokenStatus defines the observed state of ClusterToken
@@ -173,6 +185,26 @@ func (t *ClusterToken) GetSecretBasicAuth() bool {
 	return t.Spec.Secret.BasicAuth
 }
 
+// GetSecretDataSources returns the extraData sources for this ClusterToken,
+// defaulting any configMap/secret ref's empty namespace to the target
+// Secret's namespace. Sources are deep-copied so the defaulting never
+// mutates the caller's spec.
+func (t *ClusterToken) GetSecretDataSources() []SecretDataSource {
+	if len(t.Spec.Secret.ExtraData) == 0 {
+		return nil
+	}
+	sources := make([]SecretDataSource, len(t.Spec.Secret.ExtraData))
+	for i, source := range t.Spec.Secret.ExtraData {
+		sources[i] = *source.DeepCopy()
+		for _, ref := range []*SecretDataSourceRef{sources[i].ConfigMap, sources[i].Secret} {
+			if ref != nil && ref.Namespace == "" {
+				ref.Namespace = t.Spec.Secret.Namespace
+			}
+		}
+	}
+	return sources
+}
+
 func (t *ClusterToken) GetInstallationTokenOptions() *github.InstallationTokenOptions {
 	return &github.InstallationTokenOptions{
 		Permissions:   t.Spec.Permissions.ToInstallationPermissions(),
@@ -212,6 +244,10 @@ func (t *ClusterToken) GetStatusConditions() []metav1.Condition {
 
 func (t *ClusterToken) SetStatusCondition(condition metav1.Condition) (changed bool) {
 	return meta.SetStatusCondition(&t.Status.Conditions, condition)
+}
+
+func (t *ClusterToken) RemoveStatusCondition(conditionType string) (changed bool) {
+	return meta.RemoveStatusCondition(&t.Status.Conditions, conditionType)
 }
 
 // +kubebuilder:object:root=true

@@ -73,9 +73,6 @@ func TestPermissions_ToInstallationPermissions_FieldMapping(t *testing.T) {
 	}
 }
 
-//go:fix inline
-func ptr(s string) *string { return new(s) }
-
 func TestPermissions_ToInstallationPermissions_AllPermissions(t *testing.T) {
 	p := &v1.Permissions{
 		Actions:                       new("actions"),

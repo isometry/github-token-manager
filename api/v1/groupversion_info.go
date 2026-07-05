@@ -29,6 +29,7 @@ var (
 	GroupVersion = schema.GroupVersion{Group: "github.as-code.io", Version: "v1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme
+	//nolint:staticcheck // standard kubebuilder scaffolding; scheme.Builder deprecation has no drop-in replacement yet
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}
 
 	// AddToScheme adds the types in this group-version to the given scheme.

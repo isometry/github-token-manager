@@ -13,7 +13,7 @@ import (
 
 func TestNilRecorderSafety(t *testing.T) {
 	var r *Recorder
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// All methods must be callable on a nil receiver without panic.
 	r.RecordTokenRefresh(ctx, "github-token", ResultSuccess)
@@ -41,7 +41,7 @@ func TestRecorderInstruments(t *testing.T) {
 		t.Fatalf("newRecorder: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Record some values.
 	r.RecordTokenRefresh(ctx, "github-token", ResultSuccess)
@@ -134,7 +134,7 @@ func TestActiveTokenIdempotency(t *testing.T) {
 		t.Fatalf("newRecorder: %v", err)
 	}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// First call increments.
 	r.EnsureTokenActive(ctx, "github-token", "default/tok-a")

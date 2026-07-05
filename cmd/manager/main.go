@@ -20,9 +20,11 @@ import (
 	"context"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
@@ -206,7 +208,11 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() {
-		if err := metricsRecorder.Shutdown(context.Background()); err != nil {
+		// The signal context is already cancelled by the time this runs;
+		// derive an uncancelled-but-bounded context for the final flush.
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		if err := metricsRecorder.Shutdown(shutdownCtx); err != nil {
 			setupLog.Error(err, "shutting down meter provider")
 		}
 	}()
@@ -229,45 +235,16 @@ func main() {
 
 	registry := ghapp.NewRegistry(operatorNamespace, startupCfg)
 
-	if err := mgr.GetFieldIndexer().IndexField(ctx, &githubv1.Token{}, controller.TokenAppRefIndex, func(obj client.Object) []string {
-		t := obj.(*githubv1.Token)
-		if t.Spec.AppRef == nil {
-			return nil
-		}
-		return []string{t.Spec.AppRef.Name}
-	}); err != nil {
-		setupLog.Error(err, "unable to create field indexer", "field", controller.TokenAppRefIndex)
-		os.Exit(1)
-	}
-
-	if err := mgr.GetFieldIndexer().IndexField(ctx, &githubv1.ClusterToken{}, controller.ClusterTokenAppRefIndex, func(obj client.Object) []string {
-		ct := obj.(*githubv1.ClusterToken)
-		if ct.Spec.AppRef == nil {
-			return nil
-		}
-		ns := ct.Spec.AppRef.Namespace
-		if ns == "" {
-			ns = operatorNamespace
-		}
-		return []string{ns + "/" + ct.Spec.AppRef.Name}
-	}); err != nil {
-		setupLog.Error(err, "unable to create field indexer", "field", controller.ClusterTokenAppRefIndex)
-		os.Exit(1)
-	}
-
-	if err := mgr.GetFieldIndexer().IndexField(ctx, &githubv1.App{}, controller.AppKeyRefIndex, func(obj client.Object) []string {
-		a := obj.(*githubv1.App)
-		if a.Spec.KeyRef == nil {
-			return nil
-		}
-		return []string{a.Spec.KeyRef.Name}
-	}); err != nil {
-		setupLog.Error(err, "unable to create field indexer", "field", controller.AppKeyRefIndex)
+	if err := setupFieldIndexes(ctx, mgr, operatorNamespace); err != nil {
+		setupLog.Error(err, "unable to create field indexer")
 		os.Exit(1)
 	}
 
 	tokenBase := controller.TokenReconcilerBase{
-		Client:   mgr.GetClient(),
+		Client: mgr.GetClient(),
+		Reader: mgr.GetAPIReader(),
+		//nolint:staticcheck // migrating to the structured events API changes the recorder type end-to-end; deferred
+		Recorder: mgr.GetEventRecorderFor("github-token-manager"),
 		Metrics:  metricsRecorder,
 		Registry: registry,
 	}
@@ -319,6 +296,50 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+// setupFieldIndexes registers the field indexes that map App changes to the
+// Tokens/ClusterTokens referencing them, and Secret changes to the Apps
+// keyed on them.
+func setupFieldIndexes(ctx context.Context, mgr ctrl.Manager, operatorNamespace string) error {
+	if err := mgr.GetFieldIndexer().IndexField(ctx, &githubv1.Token{}, controller.TokenAppRefIndex,
+		func(obj client.Object) []string {
+			t := obj.(*githubv1.Token)
+			if t.Spec.AppRef == nil {
+				return nil
+			}
+			return []string{t.Spec.AppRef.Name}
+		}); err != nil {
+		return fmt.Errorf("field %s: %w", controller.TokenAppRefIndex, err)
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(ctx, &githubv1.ClusterToken{}, controller.ClusterTokenAppRefIndex,
+		func(obj client.Object) []string {
+			ct := obj.(*githubv1.ClusterToken)
+			if ct.Spec.AppRef == nil {
+				return nil
+			}
+			ns := ct.Spec.AppRef.Namespace
+			if ns == "" {
+				ns = operatorNamespace
+			}
+			return []string{ns + "/" + ct.Spec.AppRef.Name}
+		}); err != nil {
+		return fmt.Errorf("field %s: %w", controller.ClusterTokenAppRefIndex, err)
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(ctx, &githubv1.App{}, controller.AppKeyRefIndex,
+		func(obj client.Object) []string {
+			a := obj.(*githubv1.App)
+			if a.Spec.KeyRef == nil {
+				return nil
+			}
+			return []string{a.Spec.KeyRef.Name}
+		}); err != nil {
+		return fmt.Errorf("field %s: %w", controller.AppKeyRefIndex, err)
+	}
+
+	return nil
 }
 
 // getOperatorNamespace returns the namespace this operator Pod runs in. It
