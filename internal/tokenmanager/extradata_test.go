@@ -1,6 +1,7 @@
 package tokenmanager
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -39,12 +40,15 @@ func TestResolveExtraData_Inline(t *testing.T) {
 	})
 	s := &tokenSecret{owner: owner}
 
-	got, missing, err := s.resolveExtraData(t.Context())
+	got, missing, ignored, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
 	if len(missing) != 0 {
 		t.Errorf("missing = %v, want none", missing)
+	}
+	if len(ignored) != 0 {
+		t.Errorf("ignored = %v, want none", ignored)
 	}
 	if string(got["ca.crt"]) != "PEM" {
 		t.Errorf("got %v, want ca.crt=PEM", got)
@@ -61,7 +65,7 @@ func TestResolveExtraData_ConfigMap_AllKeys(t *testing.T) {
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader(cm).Build()}
 
-	got, _, err := s.resolveExtraData(t.Context())
+	got, _, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -80,7 +84,7 @@ func TestResolveExtraData_ConfigMap_Allowlist(t *testing.T) {
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader(cm).Build()}
 
-	got, _, err := s.resolveExtraData(t.Context())
+	got, _, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -99,7 +103,7 @@ func TestResolveExtraData_Secret_AllKeys(t *testing.T) {
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader(secret).Build()}
 
-	got, _, err := s.resolveExtraData(t.Context())
+	got, _, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -114,7 +118,7 @@ func TestResolveExtraData_OptionalMissingSource_SkipsAndReports(t *testing.T) {
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader().Build(), recorder: record.NewFakeRecorder(10)}
 
-	got, missing, err := s.resolveExtraData(t.Context())
+	got, missing, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v, want nil (optional source skipped)", err)
 	}
@@ -132,7 +136,7 @@ func TestResolveExtraData_RequiredMissingSource_Fails(t *testing.T) {
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader().Build()}
 
-	_, _, err := s.resolveExtraData(t.Context())
+	_, _, _, err := s.resolveExtraData(t.Context())
 	if err == nil {
 		t.Fatal("resolveExtraData() error = nil, want required-source error")
 	}
@@ -151,7 +155,7 @@ func TestResolveExtraData_RequiredAllowlistKeyMissing_Fails(t *testing.T) {
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader(cm).Build()}
 
-	_, _, err := s.resolveExtraData(t.Context())
+	_, _, _, err := s.resolveExtraData(t.Context())
 	if err == nil {
 		t.Fatal("resolveExtraData() error = nil, want required-key error")
 	}
@@ -170,7 +174,7 @@ func TestResolveExtraData_OptionalAllowlistKeyMissing_SkipsPerKey(t *testing.T) 
 	})
 	s := &tokenSecret{owner: owner, reader: newFakeReader(cm).Build(), recorder: record.NewFakeRecorder(10)}
 
-	got, missing, err := s.resolveExtraData(t.Context())
+	got, missing, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v, want nil (optional key skipped)", err)
 	}
@@ -183,17 +187,27 @@ func TestResolveExtraData_OptionalAllowlistKeyMissing_SkipsPerKey(t *testing.T) 
 }
 
 func TestResolveExtraData_ReservedKeyDropped_EmitsWarningEvent(t *testing.T) {
-	owner := newTestOwner(false, githubv1.LocalSecretDataSource{
-		ConfigMap: &githubv1.LocalSecretDataSourceRef{Name: "malicious"},
-	})
+	// The reserved key arrives from two sources to prove ignored is deduped.
+	owner := newTestOwner(false,
+		githubv1.LocalSecretDataSource{
+			ConfigMap: &githubv1.LocalSecretDataSourceRef{Name: "malicious"},
+		},
+		githubv1.LocalSecretDataSource{
+			Secret: &githubv1.LocalSecretDataSourceRef{Name: "also-malicious"},
+		},
+	)
 	cm := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{Name: "malicious", Namespace: "ns"},
 		Data:       map[string]string{"token": "spoofed", "ca.crt": "PEM"},
 	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "also-malicious", Namespace: "ns"},
+		Data:       map[string][]byte{"token": []byte("also-spoofed")},
+	}
 	rec := record.NewFakeRecorder(10)
-	s := &tokenSecret{owner: owner, reader: newFakeReader(cm).Build(), recorder: rec}
+	s := &tokenSecret{owner: owner, reader: newFakeReader(cm, secret).Build(), recorder: rec}
 
-	got, _, err := s.resolveExtraData(t.Context())
+	got, _, ignored, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -202,6 +216,9 @@ func TestResolveExtraData_ReservedKeyDropped_EmitsWarningEvent(t *testing.T) {
 	}
 	if string(got["ca.crt"]) != "PEM" {
 		t.Errorf("got %v, want ca.crt=PEM to survive", got)
+	}
+	if len(ignored) != 1 || ignored[0] != "token" {
+		t.Errorf("ignored = %v, want the reserved key reported once (deduped)", ignored)
 	}
 	assertWarningEventEmitted(t, rec)
 }
@@ -214,7 +231,7 @@ func TestResolveExtraData_DuplicateKey_LastWins_EmitsWarningEvent(t *testing.T) 
 	rec := record.NewFakeRecorder(10)
 	s := &tokenSecret{owner: owner, recorder: rec}
 
-	got, _, err := s.resolveExtraData(t.Context())
+	got, _, _, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -231,7 +248,7 @@ func TestResolveExtraData_BasicAuthReservedKeysDropped(t *testing.T) {
 	rec := record.NewFakeRecorder(10)
 	s := &tokenSecret{owner: owner, recorder: rec}
 
-	got, _, err := s.resolveExtraData(t.Context())
+	got, _, ignored, err := s.resolveExtraData(t.Context())
 	if err != nil {
 		t.Fatalf("resolveExtraData() error = %v", err)
 	}
@@ -243,6 +260,9 @@ func TestResolveExtraData_BasicAuthReservedKeysDropped(t *testing.T) {
 	}
 	if string(got["ca.crt"]) != "PEM" {
 		t.Errorf("got %v, want ca.crt=PEM to survive", got)
+	}
+	if !slices.Equal(ignored, []string{"password", "username"}) {
+		t.Errorf("ignored = %v, want both reserved keys reported in sorted order", ignored)
 	}
 }
 

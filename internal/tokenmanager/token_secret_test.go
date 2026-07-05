@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -286,6 +287,114 @@ func TestReconcile_BlocksCreationWhenSourceUnavailable(t *testing.T) {
 	degraded := meta.FindStatusCondition(refreshed.Status.Conditions, githubv1.ConditionTypeExtraDataDegraded)
 	if degraded == nil || degraded.Status != metav1.ConditionTrue || degraded.Reason != githubv1.ReasonSourceUnavailable {
 		t.Errorf("ExtraDataDegraded = %+v, want True/SourceUnavailable", degraded)
+	}
+}
+
+// TestReconcile_ReservedKeysIgnoredSetsDegradedCondition covers surfacing of
+// reserved-key collisions: a source defining a key reserved by the managed
+// credential still projects its other keys, but the collision persists on
+// status as ExtraDataDegraded=True/ReservedKeysIgnored (the Warning event
+// alone would age out); once the offending key disappears from the source,
+// the condition is removed.
+func TestReconcile_ReservedKeysIgnoredSetsDegradedCondition(t *testing.T) {
+	scheme := newReconcileScheme(t)
+	token := newReconcileToken()
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "ca-bundle", Namespace: "ns"},
+		Data:       map[string]string{"token": "spoofed", "ca.crt": "PEM"},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(token).
+		WithStatusSubresource(&githubv1.Token{}).
+		Build()
+	reader := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build()
+
+	s := newReconcileTokenSecret(token, c, reader)
+
+	if _, err := s.Reconcile(t.Context()); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	got := &corev1.Secret{}
+	if err := c.Get(t.Context(), types.NamespacedName{Namespace: token.Namespace, Name: token.Name}, got); err != nil {
+		t.Fatalf("managed Secret must be created despite the reserved-key collision: %v", err)
+	}
+	if string(got.Data["token"]) != "ghs_fresh" {
+		t.Errorf("token = %q, want the managed credential, not the spoofed source value", got.Data["token"])
+	}
+	if string(got.Data["ca.crt"]) != "PEM" {
+		t.Errorf("ca.crt = %q, want the non-reserved key projected", got.Data["ca.crt"])
+	}
+
+	refreshed := &githubv1.Token{}
+	if err := c.Get(t.Context(), client.ObjectKeyFromObject(token), refreshed); err != nil {
+		t.Fatal(err)
+	}
+	ready := meta.FindStatusCondition(refreshed.Status.Conditions, githubv1.ConditionTypeReady)
+	if ready == nil || ready.Status != metav1.ConditionTrue {
+		t.Errorf("Ready = %+v, want True (credential is valid)", ready)
+	}
+	degraded := meta.FindStatusCondition(refreshed.Status.Conditions, githubv1.ConditionTypeExtraDataDegraded)
+	if degraded == nil || degraded.Status != metav1.ConditionTrue || degraded.Reason != githubv1.ReasonReservedKeysIgnored {
+		t.Fatalf("ExtraDataDegraded = %+v, want True/ReservedKeysIgnored", degraded)
+	}
+	if !strings.Contains(degraded.Message, `"token"`) {
+		t.Errorf("ExtraDataDegraded message = %q, want it to name the ignored key", degraded.Message)
+	}
+
+	// Recovery: the reserved key disappears from the source.
+	cm.Data = map[string]string{"ca.crt": "PEM"}
+	if err := reader.Update(t.Context(), cm); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Reconcile(t.Context()); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+	if err := c.Get(t.Context(), client.ObjectKeyFromObject(token), refreshed); err != nil {
+		t.Fatal(err)
+	}
+	if degraded := meta.FindStatusCondition(refreshed.Status.Conditions, githubv1.ConditionTypeExtraDataDegraded); degraded != nil {
+		t.Errorf("ExtraDataDegraded = %+v, want the condition removed after the collision is resolved", degraded)
+	}
+}
+
+// TestReconcile_ReservedAndMissingKeysCombineInDegradedCondition covers
+// co-occurrence: with both an ignored reserved key and a missing optional
+// key, the single condition takes the more actionable ReservedKeysIgnored
+// reason and its message reports both degradations.
+func TestReconcile_ReservedAndMissingKeysCombineInDegradedCondition(t *testing.T) {
+	scheme := newReconcileScheme(t)
+	token := newReconcileToken()
+	token.Spec.Secret.ExtraData = []githubv1.LocalSecretDataSource{
+		{ConfigMap: &githubv1.LocalSecretDataSourceRef{Name: "ca-bundle", Keys: []string{"token", "ca.crt", "absent.key"}, Optional: true}},
+	}
+	cm := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: "ca-bundle", Namespace: "ns"},
+		Data:       map[string]string{"token": "spoofed", "ca.crt": "PEM"},
+	}
+
+	c := fake.NewClientBuilder().WithScheme(scheme).
+		WithObjects(token).
+		WithStatusSubresource(&githubv1.Token{}).
+		Build()
+
+	s := newReconcileTokenSecret(token, c, fake.NewClientBuilder().WithScheme(scheme).WithObjects(cm).Build())
+
+	if _, err := s.Reconcile(t.Context()); err != nil {
+		t.Fatalf("Reconcile() error = %v", err)
+	}
+
+	refreshed := &githubv1.Token{}
+	if err := c.Get(t.Context(), client.ObjectKeyFromObject(token), refreshed); err != nil {
+		t.Fatal(err)
+	}
+	degraded := meta.FindStatusCondition(refreshed.Status.Conditions, githubv1.ConditionTypeExtraDataDegraded)
+	if degraded == nil || degraded.Status != metav1.ConditionTrue || degraded.Reason != githubv1.ReasonReservedKeysIgnored {
+		t.Fatalf("ExtraDataDegraded = %+v, want True/ReservedKeysIgnored to outrank KeysMissing", degraded)
+	}
+	if !strings.Contains(degraded.Message, `"token"`) || !strings.Contains(degraded.Message, "absent.key") {
+		t.Errorf("ExtraDataDegraded message = %q, want both the ignored and the missing key reported", degraded.Message)
 	}
 }
 

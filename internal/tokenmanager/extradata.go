@@ -21,22 +21,25 @@ import (
 // an absent key, fails the whole resolution; the caller decides whether to
 // retain the managed Secret's last-known-good data or block its creation.
 // Keys reserved for the operator-managed credential (per GetSecretBasicAuth)
-// are dropped with a Warning event; duplicate destination keys across
-// sources let the later source win, also with a Warning event.
-func (s *tokenSecret) resolveExtraData(ctx context.Context) (data map[string][]byte, missing []string, err error) {
+// are dropped with a Warning event and reported in ignored (deduplicated,
+// sorted); duplicate destination keys across sources let the later source
+// win, also with a Warning event.
+func (s *tokenSecret) resolveExtraData(ctx context.Context) (data map[string][]byte, missing, ignored []string, err error) {
 	reserved := reservedKeys(s.owner.GetSecretBasicAuth())
 	data = make(map[string][]byte)
+	ignoredSet := sets.New[string]()
 
 	for _, source := range s.owner.GetSecretDataSources() {
 		projected, absent, err := s.resolveSource(ctx, source)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		missing = append(missing, absent...)
 
 		for k, v := range projected {
 			if reserved.Has(k) {
 				s.recordWarning("ReservedKeyIgnored", "extraData key %q is reserved by the managed credential and was ignored", k)
+				ignoredSet.Insert(k)
 				continue
 			}
 			if _, exists := data[k]; exists {
@@ -46,7 +49,10 @@ func (s *tokenSecret) resolveExtraData(ctx context.Context) (data map[string][]b
 		}
 	}
 
-	return data, missing, nil
+	if ignoredSet.Len() > 0 {
+		ignored = sets.List(ignoredSet)
+	}
+	return data, missing, ignored, nil
 }
 
 // resolveSource resolves a single extraData entry to its projected keys,

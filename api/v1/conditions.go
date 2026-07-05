@@ -11,10 +11,12 @@ const (
 
 	// ConditionTypeExtraDataDegraded is an abnormal-true (kstatus-style)
 	// condition: set True when spec.secret.extraData did not resolve in full
-	// on the last reconcile — reason KeysMissing when optional listed keys
-	// are absent, or reason SourceUnavailable while the managed Secret
-	// serves last-known-good extraData because a required source cannot be
-	// read. Absent when extraData resolves cleanly or none is configured.
+	// on the last reconcile — reason ReservedKeysIgnored when sources define
+	// keys reserved by the operator-managed credential, KeysMissing when
+	// optional listed keys are absent, or SourceUnavailable while the managed
+	// Secret serves last-known-good extraData because a required source
+	// cannot be read. Absent when extraData resolves cleanly or none is
+	// configured.
 	ConditionTypeExtraDataDegraded = "ExtraDataDegraded"
 
 	// Condition reasons used by the Token and ClusterToken controllers when
@@ -46,6 +48,9 @@ const (
 	// ReasonKeysMissing indicates optional extraData keys were absent from
 	// their source and skipped.
 	ReasonKeysMissing = "KeysMissing"
+	// ReasonReservedKeysIgnored indicates extraData sources defined keys
+	// reserved by the operator-managed credential, which were ignored.
+	ReasonReservedKeysIgnored = "ReservedKeysIgnored"
 	// ReasonSourceUnavailable indicates a required extraData source could not
 	// be resolved.
 	ReasonSourceUnavailable = "SourceUnavailable"

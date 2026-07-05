@@ -146,7 +146,7 @@ func (s *tokenSecret) Reconcile(ctx context.Context) (result reconcile.Result, e
 	}
 	secretNotFound := apierrors.IsNotFound(err)
 
-	extraData, missing, resolveErr := s.resolveExtraData(ctx)
+	extraData, missing, ignored, resolveErr := s.resolveExtraData(ctx)
 	// degraded is the abnormal-true ExtraDataDegraded condition to surface;
 	// nil means extraData resolved cleanly (or none is configured) and any
 	// stale condition is removed on the next status write.
@@ -191,12 +191,25 @@ func (s *tokenSecret) Reconcile(ctx context.Context) (result reconcile.Result, e
 		s.recordWarning("ExtraDataSourceUnavailable", "retaining last-known-good extraData: %v", resolveErr)
 		extraData = lastKnownGoodExtraData(secret.Data, s.owner.GetSecretBasicAuth())
 
-	case len(missing) > 0:
+	case len(ignored) > 0 || len(missing) > 0:
+		// A single condition carries both partial degradations: the reason
+		// prefers ReservedKeysIgnored (a spec misconfiguration needing user
+		// action) over KeysMissing (possibly transient), while the message
+		// reports every issue.
+		reason := githubv1.ReasonKeysMissing
+		var parts []string
+		if len(ignored) > 0 {
+			reason = githubv1.ReasonReservedKeysIgnored
+			parts = append(parts, fmt.Sprintf("extraData keys reserved by the managed credential were ignored: %q", ignored))
+		}
+		if len(missing) > 0 {
+			parts = append(parts, fmt.Sprintf("optional extraData keys missing: %s", strings.Join(missing, ", ")))
+		}
 		degraded = &metav1.Condition{
 			Type:    githubv1.ConditionTypeExtraDataDegraded,
 			Status:  metav1.ConditionTrue,
-			Reason:  githubv1.ReasonKeysMissing,
-			Message: fmt.Sprintf("optional extraData keys missing: %s", strings.Join(missing, ", ")),
+			Reason:  reason,
+			Message: strings.Join(parts, "; "),
 		}
 	}
 
