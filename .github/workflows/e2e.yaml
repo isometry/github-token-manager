@@ -32,6 +32,10 @@ jobs:
 
       - name: Setup helm
         uses: azure/setup-helm@v5
+        with:
+          version: latest
+          # fail instead of silently falling back to Helm v3, which lacks --wait=watcher
+          latest-fallback: "false"
 
       - name: Setup kind
         uses: helm/kind-action@v1

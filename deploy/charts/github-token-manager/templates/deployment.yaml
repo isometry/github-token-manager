@@ -93,6 +93,9 @@ spec:
             - mountPath: /config
               name: config
               readOnly: true
+            {{- with $manager.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
       {{- with $manager.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -113,3 +116,6 @@ spec:
             defaultMode: 444
             optional: true
             secretName: {{ .Values.config.secretName }}
+        {{- with $manager.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
