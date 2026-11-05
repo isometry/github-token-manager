@@ -122,6 +122,28 @@ When `validate_key` is enabled, the operator verifies at startup that the config
 
 Supported providers: `aws` (KMS), `azure` (Key Vault), `gcp` (Cloud KMS), `vault` (Transit Engine), `file` (embedded)
 
+**Behind a TLS-inspecting proxy:**
+
+To trust additional CAs (e.g. a firewall's inspection CA) *on top of* the system roots, mount them as PEM files and point `SSL_CERT_DIR` at the directory (Go loads it in addition to the system bundle; don't use `SSL_CERT_FILE`, which replaces it). Proxy settings (`HTTPS_PROXY`/`NO_PROXY`) are honoured too.
+
+```yaml
+# Helm values
+manager:
+  env:
+    - name: SSL_CERT_DIR
+      value: /etc/ssl/extra-ca
+  extraVolumes:
+    - name: extra-ca
+      configMap:
+        name: corp-ca # ConfigMap whose keys are PEM-encoded CA certificates
+  extraVolumeMounts:
+    - name: extra-ca
+      mountPath: /etc/ssl/extra-ca
+      readOnly: true
+```
+
+CAs are loaded once at startup; restart the pod after rotating them.
+
 ### Token Resources
 
 Create `Token` (namespaced) or `ClusterToken` (cluster-scoped) resources to generate secure `Secret` objects:

@@ -65,6 +65,8 @@ metrics:
 ##   tolerations: list of tolerations (optional)
 ##   nodeSelector: node selector (optional)
 ##   env: list of additional environment variables to set on the manager container
+##   extraVolumes: list of additional pod volumes (optional)
+##   extraVolumeMounts: list of additional manager container volume mounts (optional)
 ##   resources: manager container resource requests and limits
 ## manager
 ##   repository: image repository
@@ -81,6 +83,10 @@ manager:
   # additional environment variables to set on the controller container
   # e.g. `[{name: VAULT_ADDR, value: http://vault:8200}]`
   env: []
+  # additional volumes and mounts for the manager pod/container, e.g. to extend
+  # the trusted CAs: set env SSL_CERT_DIR to the mountPath of a ConfigMap of PEMs
+  extraVolumes: []
+  extraVolumeMounts: []
   extraArgs: {}
   resources:
     limits:
